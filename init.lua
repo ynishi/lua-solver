@@ -17,7 +17,7 @@ return {
     Solution   = structure.Solution,
     KnownFact  = structure.KnownFact,
 
-    -- Strategies (差し替え可能)
+    -- Strategies (swappable)
     strategies = strategy,
 
     -- Engine

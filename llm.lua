@@ -1,23 +1,23 @@
 -- lua_solver/llm.lua
 -- Default LLM backend: Claude Code Headless Mode (claude -p)
 --
--- デフォルト実装は Claude Code CLI の Headless Mode を使用する。
+-- Default backend uses Claude Code CLI Headless Mode.
 -- https://docs.anthropic.com/en/docs/claude-code/cli-usage#non-interactive-mode
 --
--- Headless Mode はCI/自動化を前提とした非対話実行モード。
--- promptはtmpfile経由でstdinに渡される（シェル展開されない）。
+-- Headless Mode is a non-interactive execution mode designed for CI/automation.
+-- Prompts are passed via tmpfile to stdin (no shell expansion).
 --
--- M.call(prompt) -> result, err, call_id を満たす任意の関数で差し替え可能:
+-- Replaceable: any function satisfying M.call(prompt) -> result, err, call_id:
 --   llm.call = function(prompt) return my_api_call(prompt) end
 
 local M = {}
 
-M.claude_path = "claude"  -- デフォルト: PATHから探す
+M.claude_path = "claude"  -- default: resolved from PATH
 M.model = "opus"
 M.debug = false
 M.call_count = 0
 
---- 設定変更用 (Claude Code Headless Mode固有)
+--- Configure settings (Claude Code Headless Mode specific)
 --- @param opts table { claude_path?: string, model?: string, debug?: boolean }
 function M.configure(opts)
     if opts.claude_path then M.claude_path = opts.claude_path end
@@ -25,7 +25,7 @@ function M.configure(opts)
     if opts.debug ~= nil then M.debug = opts.debug end
 end
 
---- LLM呼び出し (差し替え可能: M.call = your_function)
+--- LLM call (replaceable: M.call = your_function)
 function M.call(prompt)
     M.call_count = M.call_count + 1
     local call_id = "llm-call-" .. M.call_count
@@ -65,7 +65,7 @@ function M.call(prompt)
     return result, nil, call_id
 end
 
---- テーブルを読みやすいテキストに変換（LLMへのcontext送信用）
+--- Convert table to human-readable text (for LLM context)
 function M.format_context(t, indent)
     indent = indent or ""
     if type(t) ~= "table" then return indent .. tostring(t) end
@@ -77,8 +77,8 @@ function M.format_context(t, indent)
         elseif type(v) == "table" and v.value and v.confidence then
             -- KnownFact
             local conf_mark = ""
-            if v.confidence < 0.6 then conf_mark = " [低確信]"
-            elseif v.confidence < 0.8 then conf_mark = " [中確信]"
+            if v.confidence < 0.6 then conf_mark = " [low confidence]"
+            elseif v.confidence < 0.8 then conf_mark = " [medium confidence]"
             end
             parts[#parts + 1] = indent .. tostring(k) .. ": " .. tostring(v.value) .. conf_mark
         elseif type(v) == "table" then
@@ -95,7 +95,7 @@ function M.reset_count()
     M.call_count = 0
 end
 
---- レスポンスからマーカー付き行を抽出 (複数フォーマット対応)
+--- Extract marked lines from response (supports multiple formats)
 function M.extract_marked(resp, prefix)
     if not resp then return {} end
     local results = {}

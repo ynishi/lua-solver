@@ -43,7 +43,13 @@ luarocks install lua_solver
 Or clone directly:
 
 ```bash
-git clone https://github.com/ynishi/lua-solver.git
+git clone https://github.com/ynishi/lua-solver.git lua_solver
+```
+
+Note: The directory must be named `lua_solver` (underscore) for `require("lua_solver")` to work. The `-o` target in the clone command handles this. If you already cloned, rename:
+
+```bash
+mv lua-solver lua_solver
 ```
 
 ## Quick Start

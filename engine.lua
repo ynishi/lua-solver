@@ -1,5 +1,5 @@
 -- lua_solver/engine.lua
--- Solver engine: 1ターン1ループ + 構造的状態保持
+-- Solver engine: one-turn-one-loop + structural state retention
 
 local S = require("lua_solver.structure")
 
@@ -12,7 +12,7 @@ function M.new(config)
 
     local strat = require("lua_solver.strategy")
 
-    -- Strategy (差し替え可能)
+    -- Strategy (swappable)
     self.strategies = {
         gap_detection     = config.gap_detection     or strat.gap_detection.LLM,
         gap_resolution    = config.gap_resolution    or strat.gap_resolution.ConfidenceAware,
@@ -26,35 +26,35 @@ function M.new(config)
         re_evaluate       = config.re_evaluate       or strat.re_evaluate.DeltaEval,
     }
 
-    -- Policy (閾値)
+    -- Policy (thresholds)
     self.policy = {
-        -- Confidence判定
+        -- Confidence judgment
         confidence_threshold = config.confidence_threshold or 0.7,
         volatility_threshold = config.volatility_threshold or 0.4,
 
-        -- 仮説・分解
+        -- Hypothesis / decomposition
         max_hypotheses       = config.max_hypotheses       or 5,
         decompose_threshold  = config.decompose_threshold  or 3,
         max_sub_depth        = config.max_sub_depth        or 3,
 
-        -- Gap管理
+        -- Gap management
         max_gap_rounds       = config.max_gap_rounds       or 2,
         min_evidence         = config.min_evidence         or 2,
 
-        -- Evidence独立性
+        -- Evidence independence
         same_group_weight    = config.same_group_weight    or 0.3,
 
-        -- 継続判定
+        -- Continuation judgment
         continuation_threshold = config.continuation_threshold or 0.1,
 
-        -- KnownFact確信度
+        -- KnownFact confidence
         low_confidence_bound = config.low_confidence_bound or 0.5,
 
         -- ReEvaluate
         hypothesis_decay_rate = config.hypothesis_decay_rate or 0.9,
         supersede_threshold   = config.supersede_threshold   or 0.2,
 
-        -- 蓄積仮説上限
+        -- Accumulated hypothesis limit
         max_accumulated_hypotheses = config.max_accumulated_hypotheses
             or (config.max_hypotheses or 5) * 3,
 
@@ -66,13 +66,13 @@ function M.new(config)
     return self
 end
 
---- 1ターン実行
+--- Execute one turn
 function M:turn(problem)
     problem.turn_count = (problem.turn_count or 0) + 1
     problem.gap_rounds = problem.gap_rounds or 0
     local turn_id = problem.turn_count
 
-    -- known変化検出（前ターンのsnapshotと比較）
+    -- Detect known changes (compare against previous turn snapshot)
     local changed_keys = problem:changed_known_keys()
     problem:snapshot_known()
 
@@ -83,7 +83,7 @@ function M:turn(problem)
             problem, self.policy, changed_keys)
     end
 
-    -- Phase 1: Gap検出
+    -- Phase 1: Gap detection
     if problem.gap_rounds < self.policy.max_gap_rounds then
         local gaps = self.strategies.gap_detection.detect(problem)
         if #gaps > 0 then
@@ -92,7 +92,7 @@ function M:turn(problem)
         end
     end
 
-    -- Phase 2: 分解判定
+    -- Phase 2: Decomposition check
     if #problem.sub_problems == 0 then
         local ds = self.strategies.decompose
         if ds.should(problem, self.policy) then
@@ -125,41 +125,41 @@ function M:turn(problem)
         end
     end
 
-    -- Phase 3: 仮説生成 (existing渡し)
+    -- Phase 3: Hypothesis generation (pass existing)
     local existing = problem:active_hypotheses()
     local new_hypotheses = self.strategies.hypothesis_gen.generate(
         problem, self.policy, existing)
 
-    -- turn_id付与
+    -- Assign turn_id
     for _, h in ipairs(new_hypotheses) do
         h.turn_id = turn_id
         h.status = "active"
     end
 
-    -- 新規仮説ゼロでも既存activeがあれば続行
+    -- Continue if existing active hypotheses even when no new ones generated
     if #new_hypotheses == 0 then
         if #existing == 0 then
-            return { type = "error", message = "仮説を生成できませんでした", problem = problem }
+            return { type = "error", message = "failed to generate hypotheses", problem = problem }
         end
     end
 
-    -- evaluate_batch (MCT Selective対応)
+    -- evaluate_batch (extensible for MCT Selective)
     local eval_result = self.strategies.evidence_eval.evaluate_batch(
         new_hypotheses, problem, self.policy)
 
-    -- 蓄積
+    -- Accumulate
     for _, h in ipairs(new_hypotheses) do
         problem.hypotheses[#problem.hypotheses + 1] = h
     end
 
-    -- discovered_gaps処理 (DynGapInject対応)
+    -- Process discovered_gaps (DynGapInject)
     local injected_gaps = {}
     if eval_result.discovered_gaps and #eval_result.discovered_gaps > 0 then
         local injected = 0
         for _, gap in ipairs(eval_result.discovered_gaps) do
             if injected >= self.policy.max_mid_turn_gaps then break end
 
-            -- 既存gapとの重複チェック
+            -- Deduplicate against existing gaps
             local exists = false
             for _, g in ipairs(problem.gaps) do
                 if g.key == gap.key then exists = true; break end
@@ -168,7 +168,7 @@ function M:turn(problem)
                 problem:add_gap(gap)
                 injected_gaps[#injected_gaps + 1] = gap
 
-                -- auto_resolve可能な場合: inferred KnownFactとして注入
+                -- If auto_resolve available: inject as inferred KnownFact
                 if gap.auto_resolve then
                     problem:fill(gap.key, gap.auto_resolve.value,
                         gap.auto_resolve.confidence or self.policy.inferred_confidence,
@@ -179,10 +179,10 @@ function M:turn(problem)
         end
     end
 
-    -- 仮説上限管理
+    -- Hypothesis accumulation limit
     local pruned = problem:prune_hypotheses(self.policy.max_accumulated_hypotheses)
 
-    -- active仮説全体でsynthesize
+    -- Synthesize from all active hypotheses
     local all_active = problem:active_hypotheses()
     table.sort(all_active, function(a, b)
         return a.confidence.value > b.confidence.value
@@ -192,15 +192,15 @@ function M:turn(problem)
     local solution = self.strategies.synthesize.synthesize(all_active, problem)
     solution.turn_id = turn_id
 
-    -- 制約チェック
+    -- Constraint check
     solution.constraint_results = self.strategies.constraint_verify.verify(
         solution, problem.constraints, problem
     )
 
-    -- 解を蓄積
+    -- Accumulate solution
     problem.solutions[#problem.solutions + 1] = solution
 
-    -- continuation判定
+    -- Continuation judgment
     local continuation = self.strategies.continuation.judge(
         solution, problem, self.policy)
 
@@ -219,7 +219,7 @@ function M:turn(problem)
     }
 end
 
---- 内部自動ループ (sub_problem用)
+--- Internal auto-loop (for sub_problems)
 function M:_solve_sub(problem, depth)
     if depth > self.policy.max_sub_depth then
         return S.Solution {

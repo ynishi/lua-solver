@@ -1,7 +1,7 @@
 #!/usr/bin/env lua
--- lua_solver/test.lua: ユニットテスト (LLMなし)
+-- lua_solver/test.lua: Unit tests (no LLM required)
 
--- パッケージパス: lua_solverの親ディレクトリをパスに追加
+-- Package path: add lua_solver's parent directory to path
 local script_dir = arg[0]:match("(.*/)")
 if script_dir then
     package.path = script_dir .. "../?.lua"
@@ -25,7 +25,7 @@ end
 io.write("=== lua_solver unit tests ===\n\n")
 
 -- =============================================
--- Structure テスト
+-- Structure tests
 -- =============================================
 
 -- KnownFact
@@ -251,7 +251,7 @@ local pruned2 = p4:prune_hypotheses(3)
 check("re-prune = 0 (already pruned)", pruned2 == 0)
 
 -- =============================================
--- ReEvaluate Strategy テスト
+-- ReEvaluate Strategy tests
 -- =============================================
 
 -- ReEvaluate Strategy: NoOp
@@ -375,10 +375,10 @@ check("DeltaEval exists", strat.re_evaluate.DeltaEval ~= nil)
 check("DecayBased exists", strat.re_evaluate.DecayBased ~= nil)
 
 -- =============================================
--- 修正検証テスト
+-- Fix verification tests
 -- =============================================
 
--- _apply_known_confidence 累積乗算防止
+-- _apply_known_confidence: prevent cumulative multiplication
 io.write("\n[_apply_known_confidence idempotent]\n")
 local p_kc = S.Problem {
     statement = "kc test",

@@ -1,5 +1,5 @@
 -- lua_solver/strategy.lua
--- Strategy implementations (差し替え可能なアルゴリズム)
+-- Strategy implementations (swappable algorithms)
 
 local llm = require("lua_solver.llm")
 local S = require("lua_solver.structure")
@@ -10,6 +10,7 @@ local STRICT = "\n\n重要: 上記フォーマットのみで出力してくだ�
 
 -- ========================================
 -- Strategy 1: GapDetection
+
 -- ========================================
 M.gap_detection = {}
 
@@ -299,7 +300,7 @@ HYPOTHESIS: 仮説の記述]] .. STRICT,
 end)()
 
 --- DeltaAwareHypothesis
---- 蓄積済み仮説を「既知の候補」としてLLMに渡し、新角度を要求
+--- Pass accumulated hypotheses as "known candidates" to LLM, request new angles
 M.hypothesis_gen.DeltaAware = {
     generate = function(problem, policy, existing)
         existing = existing or {}
@@ -354,9 +355,9 @@ HYPOTHESIS: 仮説の記述]] .. STRICT,
 }
 
 --- AdversarialHypothesisGen
---- 内部generatorで仮説を生成後、各仮説に対抗仮説(!H)をペア生成
+--- Generate hypotheses via inner generator, then create counter-hypothesis (!H) pairs
 M.hypothesis_gen.Adversarial = {
-    -- inner generator (デフォルト: BiasAware)
+    -- inner generator (default: BiasAware)
     inner = nil,
 
     generate = function(problem, policy, existing)
@@ -365,7 +366,7 @@ M.hypothesis_gen.Adversarial = {
 
         if #hypotheses == 0 then return hypotheses end
 
-        -- 仮説一覧をまとめて反論生成 (1 LLM call で効率化)
+        -- Batch counter-argument generation (single LLM call for efficiency)
         local claims_text = ""
         for i, h in ipairs(hypotheses) do
             claims_text = claims_text .. string.format("%d. %s\n", i, h.claim)
@@ -397,7 +398,7 @@ COUNTER: 1|初期コストが高く中小企業には不適]] .. STRICT,
             end
         end
 
-        -- max_hypotheses上限でトリミング (反証含めて超過しないよう)
+        -- Trim to max_hypotheses limit (including counter-hypotheses)
         local max = policy.max_hypotheses or 5
         if #hypotheses > max then
             while #hypotheses > max do
@@ -414,7 +415,7 @@ COUNTER: 1|初期コストが高く中小企業には不適]] .. STRICT,
 -- ========================================
 M.evidence_eval = {}
 
---- 内部: evidence取得用LLMプロンプト (共通)
+--- Internal: LLM prompt for evidence retrieval (shared)
 function M._eval_evidence_llm(hypothesis, problem)
     local prompt = string.format([[仮説について、支持する根拠と反証する根拠を挙げてください。
 
@@ -437,7 +438,7 @@ EVIDENCE: contradict|0.5|将来のスケーラビリティに制約がある]] .
     return llm.call(prompt)
 end
 
---- 内部: evidenceパース (共通)
+--- Internal: evidence parsing (shared)
 function M._parse_evidence(resp, hypothesis, call_id)
     call_id = call_id or "unknown"
     local found = false
@@ -491,16 +492,16 @@ function M._parse_evidence(resp, hypothesis, call_id)
     end
 end
 
---- 内部: KnownFact確信度の波及
---- 元のconfidenceを保持し、毎回元値から再計算 (累積乗算を防止)
+--- Internal: KnownFact confidence propagation
+--- Preserve original confidence, recalculate from original each time (prevent cumulative multiplication)
 function M._apply_known_confidence(hypothesis, problem, policy)
     local bound = policy.low_confidence_bound or 0.5
     for _, e in ipairs(hypothesis.evidence) do
-        -- 元値を保持 (初回のみ記録)
+        -- Preserve original value (record on first call only)
         if not e._original_confidence then
             e._original_confidence = e.confidence.value
         end
-        -- 毎回元値から再計算
+        -- Recalculate from original each time
         local discount = 1.0
         local applied_keys = {}
         for key, fact in pairs(problem.known) do
@@ -518,7 +519,7 @@ function M._apply_known_confidence(hypothesis, problem, policy)
     end
 end
 
---- デフォルトのevaluate_batch実装 (per-hypothesis loop)
+--- Default evaluate_batch implementation (per-hypothesis loop)
 local function default_evaluate_batch(impl, hypotheses, problem, policy)
     for _, h in ipairs(hypotheses) do
         impl.evaluate(h, problem, policy)
@@ -539,7 +540,7 @@ M.evidence_eval.SimpleCount = {
     end,
 }
 
---- LLM (SimpleCountのエイリアス)
+--- LLM (alias for SimpleCount)
 M.evidence_eval.LLM = {
     evaluate = function(hypothesis, problem, policy)
         local resp, _, call_id = M._eval_evidence_llm(hypothesis, problem)
@@ -734,14 +735,14 @@ M.continuation.ExpectedValue = {
 -- ========================================
 M.re_evaluate = {}
 
---- NoOp: 何もしない
+--- NoOp: no-op
 M.re_evaluate.NoOp = {
     re_evaluate = function(_problem, _policy, _changed_keys)
         return { updated = 0, superseded = 0, delta = 0 }
     end,
 }
 
---- DeltaEval: changed_keysに関連するevidenceを持つ仮説のみ再評価
+--- DeltaEval: re-evaluate only hypotheses with evidence related to changed_keys
 M.re_evaluate.DeltaEval = {
     re_evaluate = function(problem, policy, changed_keys)
         if not changed_keys or #changed_keys == 0 then
@@ -788,7 +789,7 @@ M.re_evaluate.DeltaEval = {
     end,
 }
 
---- DecayBased: 古いターンの仮説をdecay割引 + supersede判定
+--- DecayBased: decay older hypotheses + supersede check
 M.re_evaluate.DecayBased = {
     re_evaluate = function(problem, policy, _changed_keys)
         local decay_rate = policy.hypothesis_decay_rate or 0.9
@@ -803,7 +804,7 @@ M.re_evaluate.DecayBased = {
                 local old_conf = h.confidence.value
                 local decay = decay_rate ^ age
                 h.confidence.value = h.confidence.value * decay
-                -- basis上書き (累積連結ではなく毎回置換)
+                -- Overwrite basis (replace each time, not cumulative append)
                 h.confidence.basis = string.format("%s (decay:%.2f age:%d)",
                     h.confidence.basis:gsub(" %(decay:[%d%.]+.-%)$", ""), decay, age)
                 updated = updated + 1

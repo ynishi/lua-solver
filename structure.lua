@@ -1,10 +1,10 @@
 -- lua_solver/structure.lua
 -- Core data structures (DSL constructors)
--- Structure層: Strategy/Policyに依存しない不変骨格
+-- Structure layer: immutable skeleton independent of Strategy/Policy
 
 local M = {}
 
---- Confidence: 不確実性の定量追跡
+--- Confidence: quantitative uncertainty tracking
 function M.Confidence(t)
     t = t or {}
     return {
@@ -18,7 +18,7 @@ function M.Confidence(t)
     }
 end
 
---- KnownFact: 確信度付きの既知事実
+--- KnownFact: known fact with confidence
 function M.KnownFact(t)
     if type(t) == "string" then
         return { value = t, confidence = 0.9, source = "user" }
@@ -30,7 +30,7 @@ function M.KnownFact(t)
     }
 end
 
---- Gap: 知識の穴
+--- Gap: knowledge hole
 function M.Gap(t)
     if type(t) == "string" then
         return { key = t, question = t .. "?", required = true, status = "open" }
@@ -44,7 +44,7 @@ function M.Gap(t)
     }
 end
 
---- Constraint: 解が満たすべき条件
+--- Constraint: condition the solution must satisfy
 function M.Constraint(t)
     if type(t) == "string" then
         return { description = t, verify = nil }
@@ -55,7 +55,7 @@ function M.Constraint(t)
     }
 end
 
---- Evidence: 仮説に対する根拠
+--- Evidence: supporting/contradicting basis for a hypothesis
 function M.Evidence(t)
     return {
         content = t.content or t[1] or "",
@@ -66,7 +66,7 @@ function M.Evidence(t)
     }
 end
 
---- Hypothesis: 解の候補 + evidence蓄積
+--- Hypothesis: solution candidate with accumulated evidence
 function M.Hypothesis(t)
     local self = {
         claim = t.claim or t[1] or "",
@@ -119,7 +119,7 @@ function M.Hypothesis(t)
     return self
 end
 
---- Solution: 制約充足付き解
+--- Solution: synthesized answer with constraint results
 function M.Solution(t)
     local self = {
         content = t.content or "",
@@ -137,7 +137,7 @@ function M.Solution(t)
     return self
 end
 
---- Problem: コアDSLエントリポイント
+--- Problem: core DSL entry point
 function M.Problem(t)
     local gaps = {}
     for _, g in ipairs(t.gaps or {}) do

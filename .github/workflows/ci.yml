@@ -16,7 +16,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y lua5.4
 
       - name: Run tests
-        run: LUA_PATH="$GITHUB_WORKSPACE/../?.lua;$GITHUB_WORKSPACE/../?/init.lua;;" lua test.lua
+        run: |
+          ln -s "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/../lua_solver"
+          LUA_PATH="$GITHUB_WORKSPACE/../?.lua;$GITHUB_WORKSPACE/../?/init.lua;;" lua test.lua
 
   fmt:
     runs-on: ubuntu-latest

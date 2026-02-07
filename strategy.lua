@@ -822,6 +822,244 @@ M.re_evaluate.DecayBased = {
 }
 
 -- ========================================
+-- Strategy 10: HypothesisSelection (SelectionLogic IF)
+-- Interface: init(candidates) → stats
+--            next(candidates, stats, policy) → hypothesis or nil
+--            update(hypothesis, stats) → void
+--            rank(candidates, policy) → ordered list
+-- ========================================
+M.hypothesis_selection = {}
+
+--- Greedy: always pick highest confidence (current default behavior)
+M.hypothesis_selection.Greedy = {
+    init = function(candidates)
+        local stats = { _total = 0 }
+        for _, h in ipairs(candidates) do
+            stats[h] = { visited = false }
+        end
+        return stats
+    end,
+    next = function(candidates, stats, _policy)
+        local best, best_conf = nil, -1
+        for _, h in ipairs(candidates) do
+            if stats[h] and not stats[h].visited and h.confidence.value > best_conf then
+                best = h
+                best_conf = h.confidence.value
+            end
+        end
+        return best
+    end,
+    update = function(hypothesis, stats)
+        if stats[hypothesis] then stats[hypothesis].visited = true end
+        stats._total = stats._total + 1
+        hypothesis.eval_count = (hypothesis.eval_count or 0) + 1
+    end,
+    rank = function(candidates, _policy)
+        local sorted = {}
+        for _, h in ipairs(candidates) do sorted[#sorted + 1] = h end
+        table.sort(sorted, function(a, b)
+            return a.confidence.value > b.confidence.value
+        end)
+        return sorted
+    end,
+}
+
+--- UCB1: Upper Confidence Bound for exploration/exploitation balance
+--- Unvisited hypotheses get infinite bonus (evaluated first).
+--- Visited hypotheses: exploit + C * sqrt(ln(N) / n_i)
+M.hypothesis_selection.UCB1 = {
+    init = function(candidates)
+        local stats = { _total = 0 }
+        for _, h in ipairs(candidates) do
+            local n = h.eval_count or 0
+            stats[h] = { visits = n, total_reward = h.confidence.value * n }
+            stats._total = stats._total + n
+        end
+        return stats
+    end,
+    next = function(candidates, stats, policy)
+        local C = policy.exploration_constant or 1.41
+        local N = math.max(stats._total, 1)
+
+        local best, best_score = nil, -math.huge
+        for _, h in ipairs(candidates) do
+            local s = stats[h]
+            if not s then goto continue end
+            if s.visited_this_round then goto continue end
+
+            local ni = s.visits
+            local score
+            if ni == 0 then
+                score = math.huge
+            else
+                local exploit = s.total_reward / ni
+                local explore = C * math.sqrt(math.log(N) / ni)
+                score = exploit + explore
+            end
+
+            if score > best_score then
+                best = h
+                best_score = score
+            end
+            ::continue::
+        end
+        return best
+    end,
+    update = function(hypothesis, stats)
+        local s = stats[hypothesis]
+        s.visits = s.visits + 1
+        s.total_reward = s.total_reward + hypothesis.confidence.value
+        s.visited_this_round = true
+        stats._total = stats._total + 1
+        hypothesis.eval_count = (hypothesis.eval_count or 0) + 1
+    end,
+    rank = function(candidates, policy)
+        local C = policy.exploration_constant or 1.41
+        local total = 0
+        for _, h in ipairs(candidates) do
+            total = total + math.max(h.eval_count or 0, 1)
+        end
+        total = math.max(total, 1)
+
+        local scored = {}
+        for _, h in ipairs(candidates) do
+            local ni = math.max(h.eval_count or 0, 1)
+            local exploit = h.confidence.value
+            local explore = C * math.sqrt(math.log(total) / ni)
+            scored[#scored + 1] = { h = h, score = exploit + explore }
+        end
+        table.sort(scored, function(a, b) return a.score > b.score end)
+
+        local result = {}
+        for _, s in ipairs(scored) do result[#result + 1] = s.h end
+        return result
+    end,
+}
+
+--- Thompson Sampling: probabilistic selection via Beta distribution
+--- Uses confidence as mean, volatility as spread multiplier.
+--- Naturally explores uncertain hypotheses while exploiting confident ones.
+M.hypothesis_selection.Thompson = {
+    --- Compute Beta distribution parameters from hypothesis state
+    _beta_params = function(h)
+        local n = math.max(h.eval_count or 0, 1)
+        return h.confidence.value * n + 1, (1 - h.confidence.value) * n + 1
+    end,
+
+    init = function(candidates)
+        local stats = { _total = 0 }
+        local params_fn = M.hypothesis_selection.Thompson._beta_params
+        for _, h in ipairs(candidates) do
+            local alpha, beta_p = params_fn(h)
+            stats[h] = { alpha = alpha, beta = beta_p, visited_this_round = false }
+        end
+        return stats
+    end,
+
+    --- Box-Muller normal sample, then map to Beta approximation
+    _sample_beta = function(alpha, beta_p)
+        local mean = alpha / (alpha + beta_p)
+        local var = (alpha * beta_p) / ((alpha + beta_p) ^ 2 * (alpha + beta_p + 1))
+        local stddev = math.sqrt(var)
+        local u1 = math.random()
+        local u2 = math.random()
+        if u1 < 1e-10 then u1 = 1e-10 end
+        local z = math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
+        local sample = mean + z * stddev
+        return math.max(0, math.min(1, sample))
+    end,
+
+    next = function(candidates, stats, _policy)
+        local best, best_sample = nil, -1
+        local sample_fn = M.hypothesis_selection.Thompson._sample_beta
+
+        for _, h in ipairs(candidates) do
+            local s = stats[h]
+            if not s or s.visited_this_round then goto continue end
+            local vol_mult = (h.confidence.volatility or 0.5) + 0.5
+            local sample = sample_fn(s.alpha / vol_mult, s.beta / vol_mult)
+            if sample > best_sample then
+                best = h
+                best_sample = sample
+            end
+            ::continue::
+        end
+        return best
+    end,
+
+    update = function(hypothesis, stats)
+        local s = stats[hypothesis]
+        if hypothesis.confidence.value > 0.5 then
+            s.alpha = s.alpha + hypothesis.confidence.value
+        else
+            s.beta = s.beta + (1 - hypothesis.confidence.value)
+        end
+        s.visited_this_round = true
+        stats._total = stats._total + 1
+        hypothesis.eval_count = (hypothesis.eval_count or 0) + 1
+    end,
+
+    rank = function(candidates, _policy)
+        local params_fn = M.hypothesis_selection.Thompson._beta_params
+        local scored = {}
+        for _, h in ipairs(candidates) do
+            local alpha, beta_p = params_fn(h)
+            scored[#scored + 1] = { h = h, score = alpha / (alpha + beta_p) }
+        end
+        table.sort(scored, function(a, b) return a.score > b.score end)
+        local result = {}
+        for _, s in ipairs(scored) do result[#result + 1] = s.h end
+        return result
+    end,
+}
+
+--- Internal: budget-limited selection→evaluate loop (shared by Selective instances)
+local function _selective_batch(inner, sel, hypotheses, problem, policy)
+    if #hypotheses == 0 then return { discovered_gaps = {}, evaluated_count = 0 } end
+
+    local budget = policy.eval_budget or #hypotheses
+    local stats = sel.init(hypotheses)
+    local evaluated = 0
+
+    while evaluated < budget do
+        local selected = sel.next(hypotheses, stats, policy)
+        if not selected then break end
+
+        inner.evaluate(selected, problem, policy)
+        sel.update(selected, stats)
+        evaluated = evaluated + 1
+    end
+
+    return {
+        discovered_gaps = {},
+        selection_stats = stats,
+        evaluated_count = evaluated,
+    }
+end
+
+--- Selective: factory to create budget-limited evidence evaluator
+--- Wraps an inner evaluator with selection logic.
+--- Usage: Selective(inner_evaluator, selection_strategy)
+function M.evidence_eval.Selective(inner, selection)
+    inner = inner or M.evidence_eval.IndependenceWeighted
+    local sel = type(selection) == "table" and selection
+        or M.hypothesis_selection[selection or "UCB1"]
+
+    return {
+        evaluate = function(hypothesis, problem, policy)
+            return inner.evaluate(hypothesis, problem, policy)
+        end,
+        evaluate_batch = function(hypotheses, problem, policy)
+            if not sel then
+                return default_evaluate_batch(
+                    { evaluate = inner.evaluate }, hypotheses, problem, policy)
+            end
+            return _selective_batch(inner, sel, hypotheses, problem, policy)
+        end,
+    }
+end
+
+-- ========================================
 -- Synthesize
 -- ========================================
 M.synthesize = {}

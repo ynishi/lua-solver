@@ -74,6 +74,7 @@ function M.Hypothesis(t)
         confidence = t.confidence or M.Confidence(),
         turn_id = t.turn_id or 0,
         status = t.status or "active",
+        eval_count = t.eval_count or 0,
     }
 
     function self:add_evidence(e)

@@ -23,7 +23,7 @@ All problem-solving process states are expressed through combinations and relati
 
 ---
 
-## Strategy IF (10 swap points) and implementations
+## Strategy IF (11 swap points) and implementations
 
 External IF is unified as `strategy_name.method(inputs) → outputs`. Internal implementation (LLM / heuristic / human judgment) is unconstrained.
 
@@ -33,12 +33,13 @@ External IF is unified as `strategy_name.method(inputs) → outputs`. Internal i
 | 2 | GapResolution | Resolve missing information | Direct, ConfidenceAware |
 | 3 | Decompose | Decompose into sub-problems | Threshold |
 | 4 | HypothesisGen | Generate hypotheses | LLM, BiasAware, DeltaAware, Adversarial |
-| 5 | EvidenceEval | Evaluate evidence (evaluate_batch IF) | SimpleCount, LLM, IndependenceWeighted |
+| 5 | EvidenceEval | Evaluate evidence (evaluate_batch IF) | SimpleCount, LLM, IndependenceWeighted, Selective |
 | 6 | ConstraintVerify | Check constraint satisfaction | LLM |
 | 7 | Synthesize | Synthesize hypotheses into solution | LLM |
 | 8 | Merge | Merge sub-solutions | WeakestLink |
 | 9 | Continuation | Continue/stop judgment | AlwaysStop, ExpectedValue |
 | 10 | ReEvaluate | Re-evaluate on information change | NoOp, DeltaEval, DecayBased |
+| 11 | HypothesisSelection | Select which hypotheses to evaluate/rank | Greedy, UCB1, Thompson |
 
 ### LLM Backend
 
@@ -83,25 +84,28 @@ All reduce to **Structure recombination + Strategy implementation differences**.
 | Gap Detection (information completeness check before hypothesis generation) | ReAct's Action is close but differs in pre/post timing |
 | Confidence propagation (low-confidence KnownFact → Evidence discount) | Unique |
 | Continuation Judge (stop based on expected improvement value) | LATS budget management is closest |
+| Hypothesis Selection (UCB1/Thompson for evaluate budget allocation) | Inspired by swarm-engine ExplorationMap + SelectionLogic |
 
 These derive from the premise that **"humans also don't know the correct answer"**. Most other frameworks are oriented toward benchmarks where ground truth exists.
 
 ---
 
-## Extension design (not yet implemented)
+## Extension design
 
 The core structure is complete. All future improvements can be absorbed within Strategy IFs.
 
-| Extension | Target Strategy | Structure change |
-|-----------|----------------|-----------------|
-| MCT Selective Deepening (LATS-like) | EvidenceEval.evaluate_batch extension | None |
-| LLMSemanticEval (semantic re-evaluate) | ReEvaluate swap | None |
-| Adversarial enhancement (contradiction pairs) | HypothesisGen swap | None |
-| Prompting improvements | synthesize/eval prompt text | None |
-| Policy auto-optimization | DSPy-style tuning | None |
+| Extension | Target Strategy | Structure change | Status |
+|-----------|----------------|-----------------|--------|
+| Selective Deepening (UCB1/Thompson) | HypothesisSelection + EvidenceEval.Selective | None | **Implemented** |
+| Cross-turn deepening (re-evaluate existing via selection) | HypothesisSelection + EvidenceEval | None | Planned |
+| LLMSemanticEval (semantic re-evaluate) | ReEvaluate swap | None | Planned |
+| Adversarial enhancement (contradiction pairs) | HypothesisGen swap | None | Planned |
+| Prompting improvements | synthesize/eval prompt text | None | Planned |
+| Policy auto-optimization | DSPy-style tuning | None | Planned |
 
 ---
 
 ## Changelog
 
+- 0.2.0: HypothesisSelection strategy (Greedy/UCB1/Thompson), Selective evaluate_batch, eval_budget policy
 - 0.1.0: Organized for publication as lua_solver. LLM backend swap support, tests added

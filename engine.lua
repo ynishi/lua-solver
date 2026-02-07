@@ -14,16 +14,17 @@ function M.new(config)
 
     -- Strategy (swappable)
     self.strategies = {
-        gap_detection     = config.gap_detection     or strat.gap_detection.LLM,
-        gap_resolution    = config.gap_resolution    or strat.gap_resolution.ConfidenceAware,
-        decompose         = config.decompose         or strat.decompose.Threshold,
-        hypothesis_gen    = config.hypothesis_gen    or strat.hypothesis_gen.LLM,
-        evidence_eval     = config.evidence_eval     or strat.evidence_eval.IndependenceWeighted,
-        constraint_verify = config.constraint_verify or strat.constraint_verify.LLM,
-        synthesize        = config.synthesize        or strat.synthesize.LLM,
-        merge             = config.merge             or strat.merge.WeakestLink,
-        continuation      = config.continuation      or strat.continuation.ExpectedValue,
-        re_evaluate       = config.re_evaluate       or strat.re_evaluate.DeltaEval,
+        gap_detection        = config.gap_detection        or strat.gap_detection.LLM,
+        gap_resolution       = config.gap_resolution       or strat.gap_resolution.ConfidenceAware,
+        decompose            = config.decompose            or strat.decompose.Threshold,
+        hypothesis_gen       = config.hypothesis_gen       or strat.hypothesis_gen.LLM,
+        evidence_eval        = config.evidence_eval        or strat.evidence_eval.IndependenceWeighted,
+        constraint_verify    = config.constraint_verify    or strat.constraint_verify.LLM,
+        synthesize           = config.synthesize           or strat.synthesize.LLM,
+        merge                = config.merge                or strat.merge.WeakestLink,
+        continuation         = config.continuation         or strat.continuation.ExpectedValue,
+        re_evaluate          = config.re_evaluate          or strat.re_evaluate.DeltaEval,
+        hypothesis_selection = config.hypothesis_selection or nil,
     }
 
     -- Policy (thresholds)
@@ -61,6 +62,10 @@ function M.new(config)
         -- DynGapInject
         max_mid_turn_gaps       = config.max_mid_turn_gaps       or 3,
         inferred_confidence     = config.inferred_confidence     or 0.3,
+
+        -- HypothesisSelection
+        eval_budget             = config.eval_budget             or nil,
+        exploration_constant    = config.exploration_constant    or 1.41,
     }
 
     return self
@@ -182,11 +187,16 @@ function M:turn(problem)
     -- Hypothesis accumulation limit
     local pruned = problem:prune_hypotheses(self.policy.max_accumulated_hypotheses)
 
-    -- Synthesize from all active hypotheses
+    -- Rank active hypotheses for synthesize (selection-aware ordering)
     local all_active = problem:active_hypotheses()
-    table.sort(all_active, function(a, b)
-        return a.confidence.value > b.confidence.value
-    end)
+    if self.strategies.hypothesis_selection then
+        all_active = self.strategies.hypothesis_selection.rank(
+            all_active, self.policy)
+    else
+        table.sort(all_active, function(a, b)
+            return a.confidence.value > b.confidence.value
+        end)
+    end
 
     -- Synthesize
     local solution = self.strategies.synthesize.synthesize(all_active, problem)

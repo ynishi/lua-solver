@@ -451,6 +451,205 @@ check("DeltaEval: updated == 1 (only matching)", precise_result.updated == 1)
 check("DeltaEval: h_match revised", h_match.status == "revised")
 check("DeltaEval: h_nomatch still active", h_nomatch.status == "active")
 
+-- =============================================
+-- HypothesisSelection Strategy tests
+-- =============================================
+
+-- Selection.Greedy
+io.write("\n[HypothesisSelection.Greedy]\n")
+local sel_greedy = strat.hypothesis_selection.Greedy
+check("Greedy exists", sel_greedy ~= nil)
+
+local h_sel_a = S.Hypothesis { claim = "low", eval_count = 0 }
+h_sel_a.confidence = S.Confidence { value = 0.3 }
+local h_sel_b = S.Hypothesis { claim = "high", eval_count = 0 }
+h_sel_b.confidence = S.Confidence { value = 0.9 }
+local h_sel_c = S.Hypothesis { claim = "mid", eval_count = 0 }
+h_sel_c.confidence = S.Confidence { value = 0.6 }
+
+local gs = sel_greedy.init({ h_sel_a, h_sel_b, h_sel_c })
+local g_first = sel_greedy.next({ h_sel_a, h_sel_b, h_sel_c }, gs, {})
+check("Greedy: picks highest confidence first", g_first == h_sel_b)
+sel_greedy.update(h_sel_b, gs)
+check("Greedy: eval_count incremented", h_sel_b.eval_count == 1)
+
+local g_second = sel_greedy.next({ h_sel_a, h_sel_b, h_sel_c }, gs, {})
+check("Greedy: picks next highest", g_second == h_sel_c)
+sel_greedy.update(h_sel_c, gs)
+
+local g_third = sel_greedy.next({ h_sel_a, h_sel_b, h_sel_c }, gs, {})
+check("Greedy: picks last", g_third == h_sel_a)
+sel_greedy.update(h_sel_a, gs)
+
+local g_nil = sel_greedy.next({ h_sel_a, h_sel_b, h_sel_c }, gs, {})
+check("Greedy: nil when all visited", g_nil == nil)
+
+-- Greedy rank
+local g_ranked = sel_greedy.rank({ h_sel_a, h_sel_b, h_sel_c }, {})
+check("Greedy rank: first is highest", g_ranked[1] == h_sel_b)
+check("Greedy rank: last is lowest", g_ranked[3] == h_sel_a)
+
+-- Selection.UCB1
+io.write("\n[HypothesisSelection.UCB1]\n")
+local sel_ucb = strat.hypothesis_selection.UCB1
+check("UCB1 exists", sel_ucb ~= nil)
+
+-- Unvisited hypotheses should be selected first (infinite exploration bonus)
+local h_ucb_visited = S.Hypothesis { claim = "visited", eval_count = 3 }
+h_ucb_visited.confidence = S.Confidence { value = 0.9 }
+local h_ucb_new = S.Hypothesis { claim = "new", eval_count = 0 }
+h_ucb_new.confidence = S.Confidence { value = 0.2 }
+
+local us = sel_ucb.init({ h_ucb_visited, h_ucb_new })
+local u_first = sel_ucb.next({ h_ucb_visited, h_ucb_new }, us, { exploration_constant = 1.41 })
+check("UCB1: unvisited selected first (exploration)", u_first == h_ucb_new)
+
+-- After visiting new, visited should be selected
+sel_ucb.update(h_ucb_new, us)
+local u_second = sel_ucb.next({ h_ucb_visited, h_ucb_new }, us, { exploration_constant = 1.41 })
+check("UCB1: visited selected after new is visited", u_second == h_ucb_visited)
+
+-- UCB1 rank with exploration bonus
+local h_ucb_few = S.Hypothesis { claim = "few evals", eval_count = 1 }
+h_ucb_few.confidence = S.Confidence { value = 0.5 }
+local h_ucb_many = S.Hypothesis { claim = "many evals", eval_count = 10 }
+h_ucb_many.confidence = S.Confidence { value = 0.6 }
+
+local ucb_ranked = sel_ucb.rank({ h_ucb_few, h_ucb_many }, { exploration_constant = 1.41 })
+check("UCB1 rank: few-eval hypothesis gets exploration bonus",
+    ucb_ranked[1] == h_ucb_few)
+
+-- Selection.Thompson
+io.write("\n[HypothesisSelection.Thompson]\n")
+local sel_th = strat.hypothesis_selection.Thompson
+check("Thompson exists", sel_th ~= nil)
+check("Thompson._sample_beta exists", type(sel_th._sample_beta) == "function")
+check("Thompson._beta_params exists", type(sel_th._beta_params) == "function")
+local bp_a, bp_b = sel_th._beta_params(S.Hypothesis { claim = "bp", eval_count = 3,
+    confidence = S.Confidence { value = 0.8 } })
+check("_beta_params alpha = 0.8*3+1 = 3.4", math.abs(bp_a - 3.4) < 0.001)
+check("_beta_params beta = 0.2*3+1 = 1.6", math.abs(bp_b - 1.6) < 0.001)
+
+-- Sample should be in [0, 1]
+math.randomseed(42)
+local sample = sel_th._sample_beta(5, 5)
+check("Thompson sample in [0,1]", sample >= 0 and sample <= 1)
+
+-- Multiple samples from high-alpha should average > 0.5
+local sum = 0
+for _ = 1, 100 do sum = sum + sel_th._sample_beta(10, 2) end
+check("Thompson: high alpha -> avg > 0.7", sum / 100 > 0.7)
+
+-- Thompson rank: higher confidence -> higher Beta mean
+local h_th_high = S.Hypothesis { claim = "high", eval_count = 3 }
+h_th_high.confidence = S.Confidence { value = 0.9, volatility = 0.2 }
+local h_th_low = S.Hypothesis { claim = "low", eval_count = 3 }
+h_th_low.confidence = S.Confidence { value = 0.2, volatility = 0.2 }
+
+local th_ranked = sel_th.rank({ h_th_low, h_th_high }, {})
+check("Thompson rank: high confidence first", th_ranked[1] == h_th_high)
+
+-- Thompson next/update cycle
+local ts = sel_th.init({ h_th_high, h_th_low })
+local th_first = sel_th.next({ h_th_high, h_th_low }, ts, {})
+check("Thompson: returns a hypothesis", th_first ~= nil)
+sel_th.update(th_first, ts)
+check("Thompson: eval_count incremented", th_first.eval_count == 4)
+
+local th_second = sel_th.next({ h_th_high, h_th_low }, ts, {})
+check("Thompson: second pick is the other", th_second ~= th_first)
+
+-- Selective evaluate_batch
+io.write("\n[evidence_eval.Selective]\n")
+check("Selective factory exists", type(strat.evidence_eval.Selective) == "function")
+
+-- Test with mock evaluator and budget < count
+local mock_eval_calls = 0
+local mock_evaluator = {
+    evaluate = function(hypothesis, _problem, policy)
+        mock_eval_calls = mock_eval_calls + 1
+        hypothesis:add_evidence(S.Evidence {
+            content = "mock evidence " .. mock_eval_calls,
+            supports = true,
+            confidence = S.Confidence { value = 0.7, basis = "mock" },
+            source_id = "mock-" .. mock_eval_calls,
+            independence_group = "mock-" .. mock_eval_calls,
+        })
+        hypothesis:update_confidence(policy)
+    end,
+}
+
+local h_s1 = S.Hypothesis { claim = "sel1", eval_count = 0 }
+local h_s2 = S.Hypothesis { claim = "sel2", eval_count = 0 }
+local h_s3 = S.Hypothesis { claim = "sel3", eval_count = 0 }
+local h_s4 = S.Hypothesis { claim = "sel4", eval_count = 0 }
+local p_sel = S.Problem { statement = "selective test", known = {} }
+
+-- Budget = 2, only 2 of 4 should be evaluated
+mock_eval_calls = 0
+local sel_instance = strat.evidence_eval.Selective(
+    mock_evaluator, strat.hypothesis_selection.UCB1)
+local sel_result = sel_instance.evaluate_batch(
+    { h_s1, h_s2, h_s3, h_s4 }, p_sel, { eval_budget = 2, exploration_constant = 1.41 })
+
+check("Selective: only 2 evaluated (budget=2)", sel_result.evaluated_count == 2)
+check("Selective: mock called 2 times", mock_eval_calls == 2)
+
+-- Count how many have evidence
+local with_evidence = 0
+for _, h in ipairs({ h_s1, h_s2, h_s3, h_s4 }) do
+    if #h.evidence > 0 then with_evidence = with_evidence + 1 end
+end
+check("Selective: 2 hypotheses have evidence", with_evidence == 2)
+
+-- Count eval_count
+local with_eval = 0
+for _, h in ipairs({ h_s1, h_s2, h_s3, h_s4 }) do
+    if h.eval_count > 0 then with_eval = with_eval + 1 end
+end
+check("Selective: 2 hypotheses have eval_count > 0", with_eval == 2)
+
+-- Budget = nil (default: evaluate all)
+local h_s5 = S.Hypothesis { claim = "sel5", eval_count = 0 }
+local h_s6 = S.Hypothesis { claim = "sel6", eval_count = 0 }
+mock_eval_calls = 0
+local sel_all = strat.evidence_eval.Selective(
+    mock_evaluator, strat.hypothesis_selection.Greedy)
+local sel_all_result = sel_all.evaluate_batch(
+    { h_s5, h_s6 }, p_sel, { exploration_constant = 1.41 })
+check("Selective default budget: all evaluated", sel_all_result.evaluated_count == 2)
+check("Selective default budget: mock called 2", mock_eval_calls == 2)
+
+-- Empty list
+mock_eval_calls = 0
+local sel_empty = sel_instance.evaluate_batch({}, p_sel, { eval_budget = 5 })
+check("Selective empty: evaluated_count = 0", sel_empty.evaluated_count == 0)
+check("Selective empty: mock not called", mock_eval_calls == 0)
+
+-- Engine: hypothesis_selection config
+io.write("\n[Engine hypothesis_selection config]\n")
+local eng_sel = engine.new({
+    hypothesis_selection = strat.hypothesis_selection.UCB1,
+    eval_budget = 3,
+    exploration_constant = 2.0,
+})
+check("engine has hypothesis_selection",
+    eng_sel.strategies.hypothesis_selection == strat.hypothesis_selection.UCB1)
+check("engine policy has eval_budget", eng_sel.policy.eval_budget == 3)
+check("engine policy has exploration_constant", eng_sel.policy.exploration_constant == 2.0)
+
+local eng_no_sel = engine.new({})
+check("engine default: no hypothesis_selection", eng_no_sel.strategies.hypothesis_selection == nil)
+check("engine default: eval_budget nil", eng_no_sel.policy.eval_budget == nil)
+check("engine default: exploration_constant 1.41", eng_no_sel.policy.exploration_constant == 1.41)
+
+-- Hypothesis: eval_count field
+io.write("\n[Hypothesis eval_count]\n")
+local h_ec = S.Hypothesis { claim = "eval_count test" }
+check("eval_count default = 0", h_ec.eval_count == 0)
+local h_ec2 = S.Hypothesis { claim = "explicit", eval_count = 5 }
+check("eval_count explicit = 5", h_ec2.eval_count == 5)
+
 -- LLM configure test
 io.write("\n[LLM configure]\n")
 local llm_mod = require("lua_solver.llm")

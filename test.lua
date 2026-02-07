@@ -364,9 +364,11 @@ check("policy has hypothesis_decay_rate", eng.policy.hypothesis_decay_rate == 0.
 io.write("\n[HypothesisGen existing param]\n")
 check("DeltaAware exists", strat.hypothesis_gen.DeltaAware ~= nil)
 check("DeltaAware has generate", type(strat.hypothesis_gen.DeltaAware.generate) == "function")
-check("Adversarial exists", strat.hypothesis_gen.Adversarial ~= nil)
-check("Adversarial has generate", type(strat.hypothesis_gen.Adversarial.generate) == "function")
-check("Adversarial has inner field", strat.hypothesis_gen.Adversarial.inner == nil)
+check("Adversarial is factory function", type(strat.hypothesis_gen.Adversarial) == "function")
+local adv_instance = strat.hypothesis_gen.Adversarial()
+check("Adversarial() returns table with generate", type(adv_instance.generate) == "function")
+local adv_custom = strat.hypothesis_gen.Adversarial(strat.hypothesis_gen.LLM)
+check("Adversarial(custom_inner) returns table with generate", type(adv_custom.generate) == "function")
 
 -- Strategy implementations exist
 io.write("\n[ReEvaluate Strategy implementations]\n")

@@ -356,12 +356,11 @@ HYPOTHESIS: 仮説の記述]] .. STRICT,
 
 --- AdversarialHypothesisGen
 --- Generate hypotheses via inner generator, then create counter-hypothesis (!H) pairs
-M.hypothesis_gen.Adversarial = {
-    -- inner generator (default: BiasAware)
-    inner = nil,
-
+--- Usage: Adversarial(inner_generator)
+function M.hypothesis_gen.Adversarial(inner)
+    inner = inner or M.hypothesis_gen.BiasAware
+    return {
     generate = function(problem, policy, existing)
-        local inner = M.hypothesis_gen.Adversarial.inner or M.hypothesis_gen.BiasAware
         local hypotheses = inner.generate(problem, policy, existing)
 
         if #hypotheses == 0 then return hypotheses end
@@ -408,7 +407,8 @@ COUNTER: 1|初期コストが高く中小企業には不適]] .. STRICT,
 
         return hypotheses
     end,
-}
+    }
+end
 
 -- ========================================
 -- Strategy 5: EvidenceEvaluation

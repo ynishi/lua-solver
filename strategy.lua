@@ -6,7 +6,8 @@ local S = require("lua_solver.structure")
 
 local M = {}
 
-local STRICT = "\n\n重要: 上記フォーマットのみで出力してください。説明文・見出し・マークダウン表は不要です。"
+local STRICT =
+    "\n\n重要: 上記フォーマットのみで出力してください。説明文・見出し・マークダウン表は不要です。"
 
 -- ========================================
 -- Strategy 1: GapDetection
@@ -23,7 +24,9 @@ M.gap_detection.Static = {
 M.gap_detection.LLM = {
     detect = function(problem)
         local open = problem:open_gaps()
-        if #open > 0 then return open end
+        if #open > 0 then
+            return open
+        end
 
         local known_text = llm.format_context(problem.known)
         local constraint_text = ""
@@ -31,7 +34,8 @@ M.gap_detection.LLM = {
             constraint_text = constraint_text .. "- " .. c.description .. "\n"
         end
 
-        local prompt = string.format([[問題を解くために不足している重要な情報を特定してください。
+        local prompt = string.format(
+            [[問題を解くために不足している重要な情報を特定してください。
 
 問題: %s
 
@@ -50,13 +54,18 @@ GAP: team_size | チーム規模は何人ですか？
 GAP: budget | 予算はいくらですか？]] .. STRICT,
             problem.statement,
             known_text ~= "" and known_text or "(なし)",
-            constraint_text ~= "" and constraint_text or "(なし)")
+            constraint_text ~= "" and constraint_text or "(なし)"
+        )
 
         local resp = llm.call(prompt)
-        if not resp or resp:match("COMPLETE") then return {} end
+        if not resp or resp:match("COMPLETE") then
+            return {}
+        end
 
         local existing = {}
-        for _, g in ipairs(problem.gaps) do existing[g.key] = true end
+        for _, g in ipairs(problem.gaps) do
+            existing[g.key] = true
+        end
 
         local items = llm.extract_marked(resp, "GAP")
         for _, item in ipairs(items) do
@@ -69,7 +78,7 @@ GAP: budget | 予算はいくらですか？]] .. STRICT,
                 question = item
             end
             if key and key ~= "" and not existing[key] and not problem.known[key] then
-                problem:add_gap(S.Gap { key = key, question = question or (key .. "?") })
+                problem:add_gap(S.Gap({ key = key, question = question or (key .. "?") }))
                 existing[key] = true
             end
         end
@@ -86,11 +95,11 @@ M.gap_resolution = {}
 M.gap_resolution.Direct = {
     resolve = function(_gap, user_input)
         return {
-            known_fact = S.KnownFact {
+            known_fact = S.KnownFact({
                 value = user_input,
                 confidence = 0.9,
                 source = "user",
-            },
+            }),
         }
     end,
     handle_unanswerable = function(_gap, _problem)
@@ -116,11 +125,11 @@ M.gap_resolution.ConfidenceAware = {
 
         if explicit_conf then
             return {
-                known_fact = S.KnownFact {
+                known_fact = S.KnownFact({
                     value = rest or user_input,
                     confidence = tonumber(explicit_conf),
                     source = "user",
-                },
+                }),
             }
         end
 
@@ -137,11 +146,11 @@ M.gap_resolution.ConfidenceAware = {
         ::found::
 
         return {
-            known_fact = S.KnownFact {
+            known_fact = S.KnownFact({
                 value = user_input,
                 confidence = confidence,
                 source = "user",
-            },
+            }),
         }
     end,
 
@@ -170,20 +179,21 @@ M.decompose.Threshold = {
 
 分解不要なら「NOSPLIT」とだけ回答。
 分解する場合、1行1つ:
-SUB: 部分問題の記述]] .. STRICT,
-            problem.statement, llm.format_context(problem.known))
+SUB: 部分問題の記述]] .. STRICT, problem.statement, llm.format_context(problem.known))
 
         local resp = llm.call(prompt)
-        if not resp or resp:match("NOSPLIT") then return {} end
+        if not resp or resp:match("NOSPLIT") then
+            return {}
+        end
 
         local subs = {}
         for _, stmt in ipairs(llm.extract_marked(resp, "SUB")) do
             if #stmt > 5 then
-                subs[#subs + 1] = S.Problem {
+                subs[#subs + 1] = S.Problem({
                     statement = stmt,
                     known = problem.known,
                     constraints = problem.constraints,
-                }
+                })
             end
         end
         return subs
@@ -202,7 +212,8 @@ M.hypothesis_gen.LLM = {
             constraint_text = constraint_text .. "- " .. c.description .. "\n"
         end
 
-        local prompt = string.format([[問題に対する仮説（解の候補）を生成してください。
+        local prompt = string.format(
+            [[問題に対する仮説（解の候補）を生成してください。
 
 問題: %s
 
@@ -224,15 +235,18 @@ HYPOTHESIS: モジュラーモノリスで段階的に分離する]] .. STRICT,
             problem.statement,
             llm.format_context(problem.known),
             constraint_text ~= "" and constraint_text or "(なし)",
-            policy.max_hypotheses or 5)
+            policy.max_hypotheses or 5
+        )
 
         local resp = llm.call(prompt)
-        if not resp then return {} end
+        if not resp then
+            return {}
+        end
 
         local hypotheses = {}
         for _, claim in ipairs(llm.extract_marked(resp, "HYPOTHESIS")) do
             if #claim > 5 then
-                hypotheses[#hypotheses + 1] = S.Hypothesis { claim = claim }
+                hypotheses[#hypotheses + 1] = S.Hypothesis({ claim = claim })
             end
         end
         return hypotheses
@@ -245,7 +259,10 @@ M.hypothesis_gen.BiasAware = (function()
         { name = "現状維持バイアス", check = "何もしない/現状維持も選択肢に入れる" },
         { name = "アンカリング", check = "最初の情報に引きずられていないか確認" },
         { name = "生存者バイアス", check = "失敗事例からの仮説も生成" },
-        { name = "全修正バイアス", check = "レビュー指摘=全修正ではない。環境やコンテキストで不要な項目を識別" },
+        {
+            name = "全修正バイアス",
+            check = "レビュー指摘=全修正ではない。環境やコンテキストで不要な項目を識別",
+        },
     }
 
     return {
@@ -263,7 +280,8 @@ M.hypothesis_gen.BiasAware = (function()
 
             local known_text = llm.format_context(problem.known)
 
-            local prompt = string.format([[問題に対する仮説を生成してください。
+            local prompt = string.format(
+                [[問題に対する仮説を生成してください。
 
 問題: %s
 
@@ -283,15 +301,18 @@ HYPOTHESIS: 仮説の記述]] .. STRICT,
                 known_text,
                 constraint_text ~= "" and constraint_text or "(なし)",
                 bias_text,
-                policy.max_hypotheses or 5)
+                policy.max_hypotheses or 5
+            )
 
             local resp = llm.call(prompt)
-            if not resp then return {} end
+            if not resp then
+                return {}
+            end
 
             local hypotheses = {}
             for _, claim in ipairs(llm.extract_marked(resp, "HYPOTHESIS")) do
                 if #claim > 5 then
-                    hypotheses[#hypotheses + 1] = S.Hypothesis { claim = claim }
+                    hypotheses[#hypotheses + 1] = S.Hypothesis({ claim = claim })
                 end
             end
             return hypotheses
@@ -313,13 +334,13 @@ M.hypothesis_gen.DeltaAware = {
         if #existing > 0 then
             existing_text = "既に検討済みの仮説（これらと異なる角度から生成すること）:\n"
             for i, h in ipairs(existing) do
-                existing_text = existing_text .. string.format(
-                    "%d. %s (conf: %.2f, status: %s)\n",
-                    i, h.claim, h.confidence.value, h.status)
+                existing_text = existing_text
+                    .. string.format("%d. %s (conf: %.2f, status: %s)\n", i, h.claim, h.confidence.value, h.status)
             end
         end
 
-        local prompt = string.format([[問題に対する新しい仮説を生成してください。
+        local prompt = string.format(
+            [[問題に対する新しい仮説を生成してください。
 
 問題: %s
 
@@ -339,15 +360,18 @@ HYPOTHESIS: 仮説の記述]] .. STRICT,
             llm.format_context(problem.known),
             constraint_text ~= "" and constraint_text or "(なし)",
             existing_text,
-            policy.max_hypotheses or 5)
+            policy.max_hypotheses or 5
+        )
 
         local resp = llm.call(prompt)
-        if not resp then return {} end
+        if not resp then
+            return {}
+        end
 
         local hypotheses = {}
         for _, claim in ipairs(llm.extract_marked(resp, "HYPOTHESIS")) do
             if #claim > 5 then
-                hypotheses[#hypotheses + 1] = S.Hypothesis { claim = claim }
+                hypotheses[#hypotheses + 1] = S.Hypothesis({ claim = claim })
             end
         end
         return hypotheses
@@ -360,18 +384,21 @@ HYPOTHESIS: 仮説の記述]] .. STRICT,
 function M.hypothesis_gen.Adversarial(inner)
     inner = inner or M.hypothesis_gen.BiasAware
     return {
-    generate = function(problem, policy, existing)
-        local hypotheses = inner.generate(problem, policy, existing)
+        generate = function(problem, policy, existing)
+            local hypotheses = inner.generate(problem, policy, existing)
 
-        if #hypotheses == 0 then return hypotheses end
+            if #hypotheses == 0 then
+                return hypotheses
+            end
 
-        -- Batch counter-argument generation (single LLM call for efficiency)
-        local claims_text = ""
-        for i, h in ipairs(hypotheses) do
-            claims_text = claims_text .. string.format("%d. %s\n", i, h.claim)
-        end
+            -- Batch counter-argument generation (single LLM call for efficiency)
+            local claims_text = ""
+            for i, h in ipairs(hypotheses) do
+                claims_text = claims_text .. string.format("%d. %s\n", i, h.claim)
+            end
 
-        local prompt = string.format([[以下の各仮説に対する、最も説得力のある反論仮説を1つずつ生成してください。
+            local prompt = string.format(
+                [[以下の各仮説に対する、最も説得力のある反論仮説を1つずつ生成してください。
 
 問題: %s
 
@@ -383,30 +410,32 @@ COUNTER: 番号|反論仮説の記述
 
 例:
 COUNTER: 1|初期コストが高く中小企業には不適]] .. STRICT,
-            problem.statement, claims_text)
+                problem.statement,
+                claims_text
+            )
 
-        local resp = llm.call(prompt)
-        if resp then
-            for line in (resp .. "\n"):gmatch("([^\n]*)\n") do
-                local _num, content = line:match("COUNTER:%s*(%d+)|%s*(.+)")
-                if content and #content > 5 then
-                    hypotheses[#hypotheses + 1] = S.Hypothesis {
-                        claim = "[反証] " .. content:match("^%s*(.-)%s*$"),
-                    }
+            local resp = llm.call(prompt)
+            if resp then
+                for line in (resp .. "\n"):gmatch("([^\n]*)\n") do
+                    local _num, content = line:match("COUNTER:%s*(%d+)|%s*(.+)")
+                    if content and #content > 5 then
+                        hypotheses[#hypotheses + 1] = S.Hypothesis({
+                            claim = "[反証] " .. content:match("^%s*(.-)%s*$"),
+                        })
+                    end
                 end
             end
-        end
 
-        -- Trim to max_hypotheses limit (including counter-hypotheses)
-        local max = policy.max_hypotheses or 5
-        if #hypotheses > max then
-            while #hypotheses > max do
-                table.remove(hypotheses)
+            -- Trim to max_hypotheses limit (including counter-hypotheses)
+            local max = policy.max_hypotheses or 5
+            if #hypotheses > max then
+                while #hypotheses > max do
+                    table.remove(hypotheses)
+                end
             end
-        end
 
-        return hypotheses
-    end,
+            return hypotheses
+        end,
     }
 end
 
@@ -417,7 +446,8 @@ M.evidence_eval = {}
 
 --- Internal: LLM prompt for evidence retrieval (shared)
 function M._eval_evidence_llm(hypothesis, problem)
-    local prompt = string.format([[仮説について、支持する根拠と反証する根拠を挙げてください。
+    local prompt = string.format(
+        [[仮説について、支持する根拠と反証する根拠を挙げてください。
 
 問題: %s
 仮説: %s
@@ -432,8 +462,10 @@ EVIDENCE: contradict|0.6|反証の記述
 例:
 EVIDENCE: support|0.7|チーム規模が小さいため管理コストが低い
 EVIDENCE: contradict|0.5|将来のスケーラビリティに制約がある]] .. STRICT,
-        problem.statement, hypothesis.claim,
-        llm.format_context(problem.known))
+        problem.statement,
+        hypothesis.claim,
+        llm.format_context(problem.known)
+    )
 
     return llm.call(prompt)
 end
@@ -444,19 +476,18 @@ function M._parse_evidence(resp, hypothesis, call_id)
     local found = false
 
     for line in (resp .. "\n"):gmatch("([^\n]*)\n") do
-        local direction, conf_str, content = line:match(
-            "EVIDENCE:%s*(%w+)|([%d%.]+)|%s*(.+)")
+        local direction, conf_str, content = line:match("EVIDENCE:%s*(%w+)|([%d%.]+)|%s*(.+)")
         if direction and content then
-            hypothesis:add_evidence(S.Evidence {
+            hypothesis:add_evidence(S.Evidence({
                 content = content,
                 supports = direction:match("support") ~= nil,
-                confidence = S.Confidence {
+                confidence = S.Confidence({
                     value = tonumber(conf_str) or 0.5,
                     basis = "llm_eval",
-                },
+                }),
                 source_id = call_id,
                 independence_group = call_id,
-            })
+            }))
             found = true
         end
     end
@@ -468,23 +499,25 @@ function M._parse_evidence(resp, hypothesis, call_id)
                 local cells = {}
                 for cell in line:gmatch("|%s*([^|]+)%s*") do
                     cell = cell:match("^%s*(.-)%s*$")
-                    if cell ~= "" then cells[#cells + 1] = cell end
+                    if cell ~= "" then
+                        cells[#cells + 1] = cell
+                    end
                 end
                 if #cells >= 3 then
                     local dir = cells[1]:lower()
                     local conf_val = tonumber(cells[2]) or 0.5
                     local content = cells[3]
                     if dir:match("support") or dir:match("contra") then
-                        hypothesis:add_evidence(S.Evidence {
+                        hypothesis:add_evidence(S.Evidence({
                             content = content,
                             supports = dir:match("support") ~= nil,
-                            confidence = S.Confidence {
+                            confidence = S.Confidence({
                                 value = conf_val,
                                 basis = "llm_eval",
-                            },
+                            }),
                             source_id = call_id,
                             independence_group = call_id,
-                        })
+                        }))
                     end
                 end
             end
@@ -531,7 +564,9 @@ end
 M.evidence_eval.SimpleCount = {
     evaluate = function(hypothesis, problem, policy)
         local resp, _, call_id = M._eval_evidence_llm(hypothesis, problem)
-        if not resp then return end
+        if not resp then
+            return
+        end
         M._parse_evidence(resp, hypothesis, call_id)
         hypothesis:update_confidence()
     end,
@@ -544,7 +579,9 @@ M.evidence_eval.SimpleCount = {
 M.evidence_eval.LLM = {
     evaluate = function(hypothesis, problem, policy)
         local resp, _, call_id = M._eval_evidence_llm(hypothesis, problem)
-        if not resp then return end
+        if not resp then
+            return
+        end
         M._parse_evidence(resp, hypothesis, call_id)
         hypothesis:update_confidence()
     end,
@@ -557,7 +594,9 @@ M.evidence_eval.LLM = {
 M.evidence_eval.IndependenceWeighted = {
     evaluate = function(hypothesis, problem, policy)
         local resp, _, call_id = M._eval_evidence_llm(hypothesis, problem)
-        if not resp then return end
+        if not resp then
+            return
+        end
         M._parse_evidence(resp, hypothesis, call_id)
 
         if policy and policy.low_confidence_bound then
@@ -578,14 +617,17 @@ M.constraint_verify = {}
 
 M.constraint_verify.LLM = {
     verify = function(solution, constraints, problem)
-        if #constraints == 0 then return {} end
+        if #constraints == 0 then
+            return {}
+        end
 
         local clist = ""
         for i, c in ipairs(constraints) do
             clist = clist .. string.format("%d. %s\n", i, c.description)
         end
 
-        local prompt = string.format([[解決策が制約を満たしているか判定してください。
+        local prompt = string.format(
+            [[解決策が制約を満たしているか判定してください。
 
 問題: %s
 解決策:
@@ -602,10 +644,13 @@ CHECK: 1|yes|チーム規模に適合
 CHECK: 2|no|予算超過の可能性]] .. STRICT,
             problem.statement,
             type(solution.content) == "string" and solution.content:sub(1, 2000) or "(structured)",
-            clist)
+            clist
+        )
 
         local resp = llm.call(prompt)
-        if not resp then return {} end
+        if not resp then
+            return {}
+        end
 
         local results = {}
         for line in (resp .. "\n"):gmatch("([^\n]*)\n") do
@@ -628,7 +673,9 @@ M.merge = {}
 
 M.merge.WeakestLink = {
     merge = function(sub_solutions, parent)
-        if #sub_solutions == 0 then return nil end
+        if #sub_solutions == 0 then
+            return nil
+        end
 
         local min_conf, max_vol = 1.0, 0.0
         local contents = {}
@@ -652,19 +699,21 @@ M.merge.WeakestLink = {
 %s
 
 統合した解決策を記述してください。]],
-            parent.statement, table.concat(contents, "\n---\n"))
+            parent.statement,
+            table.concat(contents, "\n---\n")
+        )
 
         local resp = llm.call(prompt)
 
-        return S.Solution {
+        return S.Solution({
             content = resp or table.concat(contents, "\n"),
-            confidence = S.Confidence {
+            confidence = S.Confidence({
                 value = min_conf,
                 volatility = max_vol,
                 basis = "merged:" .. #sub_solutions,
-            },
+            }),
             basis = all_basis,
-        }
+        })
     end,
 }
 
@@ -689,9 +738,7 @@ M.continuation.ExpectedValue = {
         local stats = problem:gap_stats()
         local threshold = policy.continuation_threshold or 0.1
 
-        local ei = stats.unanswerable * 0.05
-                 + stats.skipped * 0.08
-                 + stats.low_confidence_known * 0.03
+        local ei = stats.unanswerable * 0.05 + stats.skipped * 0.08 + stats.low_confidence_known * 0.03
 
         if solution.confidence.volatility > (policy.volatility_threshold or 0.4) then
             ei = ei + 0.05
@@ -710,7 +757,11 @@ M.continuation.ExpectedValue = {
         elseif stats.low_confidence_known > 0 then
             for k, fact in pairs(problem.known) do
                 if fact.confidence < 0.6 then
-                    suggested = string.format("'%s' の確信度を上げることが効果的です（現在 %.1f）", k, fact.confidence)
+                    suggested = string.format(
+                        "'%s' の確信度を上げることが効果的です（現在 %.1f）",
+                        k,
+                        fact.confidence
+                    )
                     break
                 end
             end
@@ -723,8 +774,11 @@ M.continuation.ExpectedValue = {
             expected_improvement = ei,
             reason = string.format(
                 "unanswerable=%d, skipped=%d, low_conf_known=%d, volatility=%.2f",
-                stats.unanswerable, stats.skipped, stats.low_confidence_known,
-                solution.confidence.volatility),
+                stats.unanswerable,
+                stats.skipped,
+                stats.low_confidence_known,
+                solution.confidence.volatility
+            ),
             suggested_action = suggested,
         }
     end,
@@ -759,13 +813,14 @@ M.re_evaluate.DeltaEval = {
             for _, e in ipairs(h.evidence) do
                 for _, key in ipairs(changed_keys) do
                     local fact = problem.known[key]
-                    if fact and (e.content:find(key, 1, true)
-                        or e.content:find(fact.value, 1, true)) then
+                    if fact and (e.content:find(key, 1, true) or e.content:find(fact.value, 1, true)) then
                         needs_update = true
                         break
                     end
                 end
-                if needs_update then break end
+                if needs_update then
+                    break
+                end
             end
 
             if needs_update then
@@ -805,8 +860,12 @@ M.re_evaluate.DecayBased = {
                 local decay = decay_rate ^ age
                 h.confidence.value = h.confidence.value * decay
                 -- Overwrite basis (replace each time, not cumulative append)
-                h.confidence.basis = string.format("%s (decay:%.2f age:%d)",
-                    h.confidence.basis:gsub(" %(decay:[%d%.]+.-%)$", ""), decay, age)
+                h.confidence.basis = string.format(
+                    "%s (decay:%.2f age:%d)",
+                    h.confidence.basis:gsub(" %(decay:[%d%.]+.-%)$", ""),
+                    decay,
+                    age
+                )
                 updated = updated + 1
                 total_delta = total_delta + math.abs(h.confidence.value - old_conf)
 
@@ -850,13 +909,17 @@ M.hypothesis_selection.Greedy = {
         return best
     end,
     update = function(hypothesis, stats)
-        if stats[hypothesis] then stats[hypothesis].visited = true end
+        if stats[hypothesis] then
+            stats[hypothesis].visited = true
+        end
         stats._total = stats._total + 1
         hypothesis.eval_count = (hypothesis.eval_count or 0) + 1
     end,
     rank = function(candidates, _policy)
         local sorted = {}
-        for _, h in ipairs(candidates) do sorted[#sorted + 1] = h end
+        for _, h in ipairs(candidates) do
+            sorted[#sorted + 1] = h
+        end
         table.sort(sorted, function(a, b)
             return a.confidence.value > b.confidence.value
         end)
@@ -884,8 +947,12 @@ M.hypothesis_selection.UCB1 = {
         local best, best_score = nil, -math.huge
         for _, h in ipairs(candidates) do
             local s = stats[h]
-            if not s then goto continue end
-            if s.visited_this_round then goto continue end
+            if not s then
+                goto continue
+            end
+            if s.visited_this_round then
+                goto continue
+            end
 
             local ni = s.visits
             local score
@@ -928,10 +995,14 @@ M.hypothesis_selection.UCB1 = {
             local explore = C * math.sqrt(math.log(total) / ni)
             scored[#scored + 1] = { h = h, score = exploit + explore }
         end
-        table.sort(scored, function(a, b) return a.score > b.score end)
+        table.sort(scored, function(a, b)
+            return a.score > b.score
+        end)
 
         local result = {}
-        for _, s in ipairs(scored) do result[#result + 1] = s.h end
+        for _, s in ipairs(scored) do
+            result[#result + 1] = s.h
+        end
         return result
     end,
 }
@@ -963,7 +1034,9 @@ M.hypothesis_selection.Thompson = {
         local stddev = math.sqrt(var)
         local u1 = math.random()
         local u2 = math.random()
-        if u1 < 1e-10 then u1 = 1e-10 end
+        if u1 < 1e-10 then
+            u1 = 1e-10
+        end
         local z = math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
         local sample = mean + z * stddev
         return math.max(0, math.min(1, sample))
@@ -975,7 +1048,9 @@ M.hypothesis_selection.Thompson = {
 
         for _, h in ipairs(candidates) do
             local s = stats[h]
-            if not s or s.visited_this_round then goto continue end
+            if not s or s.visited_this_round then
+                goto continue
+            end
             local vol_mult = (h.confidence.volatility or 0.5) + 0.5
             local sample = sample_fn(s.alpha / vol_mult, s.beta / vol_mult)
             if sample > best_sample then
@@ -1006,16 +1081,22 @@ M.hypothesis_selection.Thompson = {
             local alpha, beta_p = params_fn(h)
             scored[#scored + 1] = { h = h, score = alpha / (alpha + beta_p) }
         end
-        table.sort(scored, function(a, b) return a.score > b.score end)
+        table.sort(scored, function(a, b)
+            return a.score > b.score
+        end)
         local result = {}
-        for _, s in ipairs(scored) do result[#result + 1] = s.h end
+        for _, s in ipairs(scored) do
+            result[#result + 1] = s.h
+        end
         return result
     end,
 }
 
 --- Internal: budget-limited selection→evaluate loop (shared by Selective instances)
 local function _selective_batch(inner, sel, hypotheses, problem, policy)
-    if #hypotheses == 0 then return { discovered_gaps = {}, evaluated_count = 0 } end
+    if #hypotheses == 0 then
+        return { discovered_gaps = {}, evaluated_count = 0 }
+    end
 
     local budget = policy.eval_budget or #hypotheses
     local stats = sel.init(hypotheses)
@@ -1023,7 +1104,9 @@ local function _selective_batch(inner, sel, hypotheses, problem, policy)
 
     while evaluated < budget do
         local selected = sel.next(hypotheses, stats, policy)
-        if not selected then break end
+        if not selected then
+            break
+        end
 
         inner.evaluate(selected, problem, policy)
         sel.update(selected, stats)
@@ -1042,8 +1125,7 @@ end
 --- Usage: Selective(inner_evaluator, selection_strategy)
 function M.evidence_eval.Selective(inner, selection)
     inner = inner or M.evidence_eval.IndependenceWeighted
-    local sel = type(selection) == "table" and selection
-        or M.hypothesis_selection[selection or "UCB1"]
+    local sel = type(selection) == "table" and selection or M.hypothesis_selection[selection or "UCB1"]
 
     return {
         evaluate = function(hypothesis, problem, policy)
@@ -1051,8 +1133,7 @@ function M.evidence_eval.Selective(inner, selection)
         end,
         evaluate_batch = function(hypotheses, problem, policy)
             if not sel then
-                return default_evaluate_batch(
-                    { evaluate = inner.evaluate }, hypotheses, problem, policy)
+                return default_evaluate_batch({ evaluate = inner.evaluate }, hypotheses, problem, policy)
             end
             return _selective_batch(inner, sel, hypotheses, problem, policy)
         end,
@@ -1068,18 +1149,16 @@ M.synthesize.LLM = {
     synthesize = function(hypotheses, problem)
         local hyp_text = ""
         for i, h in ipairs(hypotheses) do
-            hyp_text = hyp_text .. string.format(
-                "%d. %s (confidence: %.2f, %s)\n",
-                i, h.claim, h.confidence.value, h.confidence.basis)
+            hyp_text = hyp_text
+                .. string.format("%d. %s (confidence: %.2f, %s)\n", i, h.claim, h.confidence.value, h.confidence.basis)
             for _, e in ipairs(h.evidence) do
                 local dir = e.supports and "支持" or "反証"
-                hyp_text = hyp_text .. string.format(
-                    "   - [%s %.1f] %s\n",
-                    dir, e.confidence.value, e.content)
+                hyp_text = hyp_text .. string.format("   - [%s %.1f] %s\n", dir, e.confidence.value, e.content)
             end
         end
 
-        local prompt = string.format([[評価済み仮説を踏まえ、最善の解決策を提案してください。
+        local prompt = string.format(
+            [[評価済み仮説を踏まえ、最善の解決策を提案してください。
 
 問題: %s
 
@@ -1090,8 +1169,10 @@ M.synthesize.LLM = {
 %s
 
 複数の仮説の組み合わせも可。根拠を明示すること。]],
-            problem.statement, hyp_text,
-            llm.format_context(problem.known))
+            problem.statement,
+            hyp_text,
+            llm.format_context(problem.known)
+        )
 
         local resp = llm.call(prompt)
 
@@ -1104,15 +1185,15 @@ M.synthesize.LLM = {
             end
         end
 
-        return S.Solution {
+        return S.Solution({
             content = resp or "",
-            confidence = S.Confidence {
+            confidence = S.Confidence({
                 value = best_conf,
                 volatility = best_vol,
                 basis = #hypotheses .. " hypotheses",
-            },
+            }),
             basis = hypotheses,
-        }
+        })
     end,
 }
 

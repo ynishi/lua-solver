@@ -12,8 +12,7 @@ function M.Confidence(t)
         volatility = t.volatility or 1.0,
         basis = t.basis or "initial",
         settled = function(self, threshold, vol_threshold)
-            return self.value >= (threshold or 0.7)
-               and self.volatility < (vol_threshold or 0.4)
+            return self.value >= (threshold or 0.7) and self.volatility < (vol_threshold or 0.4)
         end,
     }
 end
@@ -60,7 +59,7 @@ function M.Evidence(t)
     return {
         content = t.content or t[1] or "",
         supports = (t.supports == nil) and true or t.supports,
-        confidence = t.confidence or M.Confidence { value = 0.5, basis = "default" },
+        confidence = t.confidence or M.Confidence({ value = 0.5, basis = "default" }),
         source_id = t.source_id or "unknown",
         independence_group = t.independence_group or "default",
     }
@@ -83,7 +82,7 @@ function M.Hypothesis(t)
 
     function self:update_confidence(policy)
         if #self.evidence == 0 then
-            self.confidence = M.Confidence { value = 0.0, volatility = 1.0, basis = "no evidence" }
+            self.confidence = M.Confidence({ value = 0.0, volatility = 1.0, basis = "no evidence" })
             return
         end
 
@@ -110,11 +109,11 @@ function M.Hypothesis(t)
         end
 
         local total = sup + ag
-        self.confidence = M.Confidence {
+        self.confidence = M.Confidence({
             value = total > 0 and (sup / total) or 0.0,
             volatility = math.max(0, 1.0 - #self.evidence / (#self.evidence + 5)),
             basis = string.format("%d sup %d contra", sup_n, ag_n),
-        }
+        })
     end
 
     return self
@@ -131,7 +130,9 @@ function M.Solution(t)
     }
     function self:satisfies_all()
         for _, v in pairs(self.constraint_results) do
-            if not v then return false end
+            if not v then
+                return false
+            end
         end
         return true
     end
@@ -160,7 +161,7 @@ function M.Problem(t)
             if type(v) == "table" and v.value then
                 known[k] = v
             else
-                known[k] = M.KnownFact { value = tostring(v), confidence = 0.9, source = "given" }
+                known[k] = M.KnownFact({ value = tostring(v), confidence = 0.9, source = "given" })
             end
         end
     end
@@ -200,11 +201,11 @@ function M.Problem(t)
         if type(value) == "table" and value.value then
             self.known[key] = value
         else
-            self.known[key] = M.KnownFact {
+            self.known[key] = M.KnownFact({
                 value = tostring(value),
                 confidence = confidence or 0.9,
                 source = source or "user",
-            }
+            })
         end
         for _, g in ipairs(self.gaps) do
             if g.key == key and g.status == "open" then
@@ -215,13 +216,17 @@ function M.Problem(t)
 
     function self:known_value(key)
         local fact = self.known[key]
-        if not fact then return nil end
+        if not fact then
+            return nil
+        end
         return fact.value
     end
 
     function self:known_confidence(key)
         local fact = self.known[key]
-        if not fact then return nil end
+        if not fact then
+            return nil
+        end
         return fact.confidence
     end
 
@@ -242,8 +247,10 @@ function M.Problem(t)
     function self:gap_stats()
         local unanswerable, skipped, low_conf = 0, 0, 0
         for _, g in ipairs(self.gaps) do
-            if g.status == "unanswerable" then unanswerable = unanswerable + 1
-            elseif g.status == "skipped" then skipped = skipped + 1
+            if g.status == "unanswerable" then
+                unanswerable = unanswerable + 1
+            elseif g.status == "skipped" then
+                skipped = skipped + 1
             end
         end
         for _, fact in pairs(self.known) do
@@ -277,7 +284,9 @@ function M.Problem(t)
     end
 
     function self:changed_known_keys()
-        if not self.known_snapshot then return {} end
+        if not self.known_snapshot then
+            return {}
+        end
         local changed = {}
         for k, v in pairs(self.known) do
             local prev = self.known_snapshot[k]
@@ -291,7 +300,9 @@ function M.Problem(t)
     end
 
     function self:prune_hypotheses(max_count)
-        if #self.hypotheses <= max_count then return 0 end
+        if #self.hypotheses <= max_count then
+            return 0
+        end
         local sorted = {}
         for i, h in ipairs(self.hypotheses) do
             sorted[#sorted + 1] = { idx = i, h = h }

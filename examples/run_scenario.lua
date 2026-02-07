@@ -5,9 +5,7 @@
 -- Package path: add lua_solver's parent directory
 local script_dir = arg[0]:match("(.*/)")
 if script_dir then
-    package.path = script_dir .. "../../?.lua"
-        .. ";" .. script_dir .. "../../?/init.lua"
-        .. ";" .. package.path
+    package.path = script_dir .. "../../?.lua" .. ";" .. script_dir .. "../../?/init.lua" .. ";" .. package.path
 end
 
 local Solver = require("lua_solver")
@@ -16,19 +14,27 @@ local Solver = require("lua_solver")
 -- Display helpers
 -- =========================================
 local ESC = string.char(27)
-local function color(code, text) return ESC.."["..code.."m"..text..ESC.."[0m" end
-local function header(text) io.write("\n"..color("1;36","["..text.."]").."\n") end
-local function info(text) io.write(color("0;33",text).."\n") end
-local function dim(text) io.write(color("0;90",text).."\n") end
+local function color(code, text)
+    return ESC .. "[" .. code .. "m" .. text .. ESC .. "[0m"
+end
+local function header(text)
+    io.write("\n" .. color("1;36", "[" .. text .. "]") .. "\n")
+end
+local function info(text)
+    io.write(color("0;33", text) .. "\n")
+end
+local function dim(text)
+    io.write(color("0;90", text) .. "\n")
+end
 local function conf_bar(v)
-    local f = math.floor(v*20)
-    return string.format("[%s%s] %.2f", string.rep("#",f), string.rep("-",20-f), v)
+    local f = math.floor(v * 20)
+    return string.format("[%s%s] %.2f", string.rep("#", f), string.rep("-", 20 - f), v)
 end
 
 -- =========================================
 -- Build Problem
 -- =========================================
-local problem = Solver.Problem {
+local problem = Solver.Problem({
     statement = "Lua vs Nim でよいほうは？（Rustに埋め込むスクリプト言語選定）",
     known = {
         use_case = "スクリプト埋め込み＆オリジナルDSL",
@@ -53,26 +59,26 @@ local problem = Solver.Problem {
     constraints = {
         "Rustとの連携がしやすい（FFI/埋め込み）",
     },
-}
+})
 
 -- Low-confidence KnownFacts
-problem.known["long_term_vision"] = Solver.KnownFact {
+problem.known["long_term_vision"] = Solver.KnownFact({
     value = "プラグインエコシステム化・外部配布",
     confidence = 0.5,
     source = "user",
-}
-problem.known["type_system_requirement"] = Solver.KnownFact {
+})
+problem.known["type_system_requirement"] = Solver.KnownFact({
     value = "具体型の生成",
     confidence = 0.6,
     source = "user",
-}
+})
 
 problem.gap_rounds = math.huge
 
 -- =========================================
 -- Build Solver
 -- =========================================
-local solver = Solver.new {
+local solver = Solver.new({
     hypothesis_gen = Solver.strategies.hypothesis_gen.BiasAware,
     evidence_eval = Solver.strategies.evidence_eval.IndependenceWeighted,
     continuation = Solver.strategies.continuation.ExpectedValue,
@@ -81,7 +87,7 @@ local solver = Solver.new {
     same_group_weight = 0.3,
     low_confidence_bound = 0.5,
     continuation_threshold = 0.1,
-}
+})
 
 Solver.llm.reset_count()
 
@@ -125,14 +131,19 @@ local function show_result(result)
         io.write(result.solution.content .. "\n")
 
         local sol = result.solution
-        info(string.format("\nConfidence: %s  volatility: %.2f  basis: %s",
-            conf_bar(sol.confidence.value), sol.confidence.volatility, sol.confidence.basis))
+        info(
+            string.format(
+                "\nConfidence: %s  volatility: %.2f  basis: %s",
+                conf_bar(sol.confidence.value),
+                sol.confidence.volatility,
+                sol.confidence.basis
+            )
+        )
 
         if next(sol.constraint_results) then
             header("Constraint Check")
             for desc, ok in pairs(sol.constraint_results) do
-                io.write(string.format("  %s %s\n",
-                    ok and color("0;32","OK") or color("0;31","NG"), desc))
+                io.write(string.format("  %s %s\n", ok and color("0;32", "OK") or color("0;31", "NG"), desc))
             end
         end
 
@@ -151,11 +162,9 @@ local function show_result(result)
         end
 
         header("Turn Stats")
-        dim(string.format("  new hypotheses this turn: %d",
-            result.new_hypotheses and #result.new_hypotheses or 0))
+        dim(string.format("  new hypotheses this turn: %d", result.new_hypotheses and #result.new_hypotheses or 0))
         dim(string.format("  pruned this turn: %d", result.pruned_count or 0))
-        dim(string.format("  active/total: %d / %d",
-            #problem:active_hypotheses(), #problem.hypotheses))
+        dim(string.format("  active/total: %d / %d", #problem:active_hypotheses(), #problem.hypotheses))
         dim(string.format("  solutions accumulated: %d", #problem.solutions))
     else
         header("Unexpected: " .. result.type)
@@ -164,7 +173,9 @@ local function show_result(result)
                 io.write(string.format("  GAP: [%s] %s (status: %s)\n", g.key, g.question, g.status))
             end
         end
-        if result.message then io.write(result.message .. "\n") end
+        if result.message then
+            io.write(result.message .. "\n")
+        end
     end
 end
 
@@ -185,12 +196,13 @@ show_result(result1)
 -- =========================================
 header("=== TURN 2: after known changes ===")
 
-problem:fill("long_term_vision",
+problem:fill(
+    "long_term_vision",
     "プラグインエコシステム化は当面しない。自分専用ツール",
-    0.9, "user")
-problem:fill("type_system_requirement",
-    "メタテーブルベースの動的型で十分",
-    0.8, "user")
+    0.9,
+    "user"
+)
+problem:fill("type_system_requirement", "メタテーブルベースの動的型で十分", 0.8, "user")
 
 dim("known changes:")
 dim("  long_term_vision: 0.5 -> 0.9 (content changed)")
@@ -213,10 +225,11 @@ for k, fact in pairs(problem.known) do
     end
 end
 if #low_conf_items > 0 then
-    table.sort(low_conf_items, function(a, b) return a.fact.confidence < b.fact.confidence end)
+    table.sort(low_conf_items, function(a, b)
+        return a.fact.confidence < b.fact.confidence
+    end)
     for _, item in ipairs(low_conf_items) do
-        io.write(string.format("  %s: %.1f -- %s\n",
-            item.key, item.fact.confidence, item.fact.value))
+        io.write(string.format("  %s: %.1f -- %s\n", item.key, item.fact.confidence, item.fact.value))
     end
 else
     dim("  All KnownFacts: confidence >= 0.8")
@@ -231,15 +244,35 @@ dim(string.format("Total turns: %d", problem.turn_count))
 dim(string.format("Hypotheses total: %d", #problem.hypotheses))
 dim(string.format("Active hypotheses: %d", #problem:active_hypotheses()))
 dim(string.format("Solutions accumulated: %d", #problem.solutions))
-dim(string.format("Known facts: %d",
-    (function() local n=0; for _ in pairs(problem.known) do n=n+1 end; return n end)()))
-dim(string.format("Gap stats: unanswerable=%d, skipped=%d, low_conf_known=%d",
-    problem:gap_stats().unanswerable, problem:gap_stats().skipped, problem:gap_stats().low_confidence_known))
+dim(string.format(
+    "Known facts: %d",
+    (function()
+        local n = 0
+        for _ in pairs(problem.known) do
+            n = n + 1
+        end
+        return n
+    end)()
+))
+dim(
+    string.format(
+        "Gap stats: unanswerable=%d, skipped=%d, low_conf_known=%d",
+        problem:gap_stats().unanswerable,
+        problem:gap_stats().skipped,
+        problem:gap_stats().low_confidence_known
+    )
+)
 
 if #problem.solutions >= 2 then
     header("Solution Confidence Progression")
     for i, sol in ipairs(problem.solutions) do
-        io.write(string.format("  Turn %d: %s (vol=%.2f)\n",
-            sol.turn_id, conf_bar(sol.confidence.value), sol.confidence.volatility))
+        io.write(
+            string.format(
+                "  Turn %d: %s (vol=%.2f)\n",
+                sol.turn_id,
+                conf_bar(sol.confidence.value),
+                sol.confidence.volatility
+            )
+        )
     end
 end

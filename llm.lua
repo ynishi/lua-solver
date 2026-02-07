@@ -12,7 +12,7 @@
 
 local M = {}
 
-M.claude_path = "claude"  -- default: resolved from PATH
+M.claude_path = "claude" -- default: resolved from PATH
 M.model = "opus"
 M.debug = false
 M.call_count = 0
@@ -20,9 +20,15 @@ M.call_count = 0
 --- Configure settings (Claude Code Headless Mode specific)
 --- @param opts table { claude_path?: string, model?: string, debug?: boolean }
 function M.configure(opts)
-    if opts.claude_path then M.claude_path = opts.claude_path end
-    if opts.model then M.model = opts.model end
-    if opts.debug ~= nil then M.debug = opts.debug end
+    if opts.claude_path then
+        M.claude_path = opts.claude_path
+    end
+    if opts.model then
+        M.model = opts.model
+    end
+    if opts.debug ~= nil then
+        M.debug = opts.debug
+    end
 end
 
 --- LLM call (replaceable: M.call = your_function)
@@ -32,18 +38,16 @@ function M.call(prompt)
 
     local tmpfile = os.tmpname()
     local f = io.open(tmpfile, "w")
-    if not f then return nil, "failed to create temp file", call_id end
+    if not f then
+        return nil, "failed to create temp file", call_id
+    end
     f:write(prompt)
     f:close()
 
-    local cmd = string.format(
-        "%s -p --model %s < %s 2>/dev/null",
-        M.claude_path, M.model, tmpfile
-    )
+    local cmd = string.format("%s -p --model %s < %s 2>/dev/null", M.claude_path, M.model, tmpfile)
 
     if M.debug then
-        io.stderr:write(string.format("[LLM #%d] %s...\n",
-            M.call_count, prompt:sub(1, 80):gsub("\n", " ")))
+        io.stderr:write(string.format("[LLM #%d] %s...\n", M.call_count, prompt:sub(1, 80):gsub("\n", " ")))
     end
 
     local handle = io.popen(cmd)
@@ -57,18 +61,21 @@ function M.call(prompt)
     os.remove(tmpfile)
 
     if M.debug then
-        io.stderr:write(string.format("[LLM #%d] -> %d chars\n",
-            M.call_count, result and #result or 0))
+        io.stderr:write(string.format("[LLM #%d] -> %d chars\n", M.call_count, result and #result or 0))
     end
 
-    if not ok then return nil, "claude exited with error", call_id end
+    if not ok then
+        return nil, "claude exited with error", call_id
+    end
     return result, nil, call_id
 end
 
 --- Convert table to human-readable text (for LLM context)
 function M.format_context(t, indent)
     indent = indent or ""
-    if type(t) ~= "table" then return indent .. tostring(t) end
+    if type(t) ~= "table" then
+        return indent .. tostring(t)
+    end
 
     local parts = {}
     for k, v in pairs(t) do
@@ -77,8 +84,10 @@ function M.format_context(t, indent)
         elseif type(v) == "table" and v.value and v.confidence then
             -- KnownFact
             local conf_mark = ""
-            if v.confidence < 0.6 then conf_mark = " [low confidence]"
-            elseif v.confidence < 0.8 then conf_mark = " [medium confidence]"
+            if v.confidence < 0.6 then
+                conf_mark = " [low confidence]"
+            elseif v.confidence < 0.8 then
+                conf_mark = " [medium confidence]"
             end
             parts[#parts + 1] = indent .. tostring(k) .. ": " .. tostring(v.value) .. conf_mark
         elseif type(v) == "table" then
@@ -97,7 +106,9 @@ end
 
 --- Extract marked lines from response (supports multiple formats)
 function M.extract_marked(resp, prefix)
-    if not resp then return {} end
+    if not resp then
+        return {}
+    end
     local results = {}
     local text = resp .. "\n"
 
@@ -108,7 +119,9 @@ function M.extract_marked(resp, prefix)
             results[#results + 1] = content:match("^%s*(.-)%s*$")
         end
     end
-    if #results > 0 then return results end
+    if #results > 0 then
+        return results
+    end
 
     -- Format 2: markdown table
     for line in text:gmatch("([^\n]*)\n") do
@@ -116,7 +129,9 @@ function M.extract_marked(resp, prefix)
             local cells = {}
             for cell in line:gmatch("|%s*([^|]+)%s*") do
                 cell = cell:match("^%s*(.-)%s*$")
-                if cell ~= "" then cells[#cells + 1] = cell end
+                if cell ~= "" then
+                    cells[#cells + 1] = cell
+                end
             end
             if #cells >= 3 then
                 local key = cells[2]:gsub("`", "")
@@ -126,12 +141,13 @@ function M.extract_marked(resp, prefix)
             end
         end
     end
-    if #results > 0 then return results end
+    if #results > 0 then
+        return results
+    end
 
     -- Format 3: numbered/bulleted list
     for line in text:gmatch("([^\n]*)\n") do
-        local content = line:match("^%s*%d+[%.%)%s]+(.+)")
-            or line:match("^%s*[%-%*]%s+(.+)")
+        local content = line:match("^%s*%d+[%.%)%s]+(.+)") or line:match("^%s*[%-%*]%s+(.+)")
         if content and #content > 5 then
             results[#results + 1] = content:match("^%s*(.-)%s*$")
         end

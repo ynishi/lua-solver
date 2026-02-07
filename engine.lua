@@ -14,16 +14,16 @@ function M.new(config)
 
     -- Strategy (swappable)
     self.strategies = {
-        gap_detection        = config.gap_detection        or strat.gap_detection.LLM,
-        gap_resolution       = config.gap_resolution       or strat.gap_resolution.ConfidenceAware,
-        decompose            = config.decompose            or strat.decompose.Threshold,
-        hypothesis_gen       = config.hypothesis_gen       or strat.hypothesis_gen.LLM,
-        evidence_eval        = config.evidence_eval        or strat.evidence_eval.IndependenceWeighted,
-        constraint_verify    = config.constraint_verify    or strat.constraint_verify.LLM,
-        synthesize           = config.synthesize           or strat.synthesize.LLM,
-        merge                = config.merge                or strat.merge.WeakestLink,
-        continuation         = config.continuation         or strat.continuation.ExpectedValue,
-        re_evaluate          = config.re_evaluate          or strat.re_evaluate.DeltaEval,
+        gap_detection = config.gap_detection or strat.gap_detection.LLM,
+        gap_resolution = config.gap_resolution or strat.gap_resolution.ConfidenceAware,
+        decompose = config.decompose or strat.decompose.Threshold,
+        hypothesis_gen = config.hypothesis_gen or strat.hypothesis_gen.LLM,
+        evidence_eval = config.evidence_eval or strat.evidence_eval.IndependenceWeighted,
+        constraint_verify = config.constraint_verify or strat.constraint_verify.LLM,
+        synthesize = config.synthesize or strat.synthesize.LLM,
+        merge = config.merge or strat.merge.WeakestLink,
+        continuation = config.continuation or strat.continuation.ExpectedValue,
+        re_evaluate = config.re_evaluate or strat.re_evaluate.DeltaEval,
         hypothesis_selection = config.hypothesis_selection or nil,
     }
 
@@ -34,16 +34,16 @@ function M.new(config)
         volatility_threshold = config.volatility_threshold or 0.4,
 
         -- Hypothesis / decomposition
-        max_hypotheses       = config.max_hypotheses       or 5,
-        decompose_threshold  = config.decompose_threshold  or 3,
-        max_sub_depth        = config.max_sub_depth        or 3,
+        max_hypotheses = config.max_hypotheses or 5,
+        decompose_threshold = config.decompose_threshold or 3,
+        max_sub_depth = config.max_sub_depth or 3,
 
         -- Gap management
-        max_gap_rounds       = config.max_gap_rounds       or 2,
-        min_evidence         = config.min_evidence         or 2,
+        max_gap_rounds = config.max_gap_rounds or 2,
+        min_evidence = config.min_evidence or 2,
 
         -- Evidence independence
-        same_group_weight    = config.same_group_weight    or 0.3,
+        same_group_weight = config.same_group_weight or 0.3,
 
         -- Continuation judgment
         continuation_threshold = config.continuation_threshold or 0.1,
@@ -53,19 +53,18 @@ function M.new(config)
 
         -- ReEvaluate
         hypothesis_decay_rate = config.hypothesis_decay_rate or 0.9,
-        supersede_threshold   = config.supersede_threshold   or 0.2,
+        supersede_threshold = config.supersede_threshold or 0.2,
 
         -- Accumulated hypothesis limit
-        max_accumulated_hypotheses = config.max_accumulated_hypotheses
-            or (config.max_hypotheses or 5) * 3,
+        max_accumulated_hypotheses = config.max_accumulated_hypotheses or (config.max_hypotheses or 5) * 3,
 
         -- DynGapInject
-        max_mid_turn_gaps       = config.max_mid_turn_gaps       or 3,
-        inferred_confidence     = config.inferred_confidence     or 0.3,
+        max_mid_turn_gaps = config.max_mid_turn_gaps or 3,
+        inferred_confidence = config.inferred_confidence or 0.3,
 
         -- HypothesisSelection
-        eval_budget             = config.eval_budget             or nil,
-        exploration_constant    = config.exploration_constant    or 1.41,
+        eval_budget = config.eval_budget or nil,
+        exploration_constant = config.exploration_constant or 1.41,
     }
 
     return self
@@ -84,8 +83,7 @@ function M:turn(problem)
     -- ReEvaluate Strategy
     local re_eval_result = { updated = 0, superseded = 0, delta = 0 }
     if #changed_keys > 0 and #problem.hypotheses > 0 then
-        re_eval_result = self.strategies.re_evaluate.re_evaluate(
-            problem, self.policy, changed_keys)
+        re_eval_result = self.strategies.re_evaluate.re_evaluate(problem, self.policy, changed_keys)
     end
 
     -- Phase 1: Gap detection
@@ -111,13 +109,11 @@ function M:turn(problem)
                 local merged = self.strategies.merge.merge(sub_solutions, problem)
                 if merged then
                     merged.turn_id = turn_id
-                    merged.constraint_results = self.strategies.constraint_verify.verify(
-                        merged, problem.constraints, problem
-                    )
+                    merged.constraint_results =
+                        self.strategies.constraint_verify.verify(merged, problem.constraints, problem)
                     problem.solutions[#problem.solutions + 1] = merged
 
-                    local continuation = self.strategies.continuation.judge(
-                        merged, problem, self.policy)
+                    local continuation = self.strategies.continuation.judge(merged, problem, self.policy)
                     return {
                         type = "solution",
                         solution = merged,
@@ -132,8 +128,7 @@ function M:turn(problem)
 
     -- Phase 3: Hypothesis generation (pass existing)
     local existing = problem:active_hypotheses()
-    local new_hypotheses = self.strategies.hypothesis_gen.generate(
-        problem, self.policy, existing)
+    local new_hypotheses = self.strategies.hypothesis_gen.generate(problem, self.policy, existing)
 
     -- Assign turn_id
     for _, h in ipairs(new_hypotheses) do
@@ -149,8 +144,7 @@ function M:turn(problem)
     end
 
     -- evaluate_batch (extensible for MCT Selective)
-    local eval_result = self.strategies.evidence_eval.evaluate_batch(
-        new_hypotheses, problem, self.policy)
+    local eval_result = self.strategies.evidence_eval.evaluate_batch(new_hypotheses, problem, self.policy)
 
     -- Accumulate
     for _, h in ipairs(new_hypotheses) do
@@ -162,12 +156,17 @@ function M:turn(problem)
     if eval_result.discovered_gaps and #eval_result.discovered_gaps > 0 then
         local injected = 0
         for _, gap in ipairs(eval_result.discovered_gaps) do
-            if injected >= self.policy.max_mid_turn_gaps then break end
+            if injected >= self.policy.max_mid_turn_gaps then
+                break
+            end
 
             -- Deduplicate against existing gaps
             local exists = false
             for _, g in ipairs(problem.gaps) do
-                if g.key == gap.key then exists = true; break end
+                if g.key == gap.key then
+                    exists = true
+                    break
+                end
             end
             if not exists and not problem.known[gap.key] then
                 problem:add_gap(gap)
@@ -175,9 +174,12 @@ function M:turn(problem)
 
                 -- If auto_resolve available: inject as inferred KnownFact
                 if gap.auto_resolve then
-                    problem:fill(gap.key, gap.auto_resolve.value,
+                    problem:fill(
+                        gap.key,
+                        gap.auto_resolve.value,
                         gap.auto_resolve.confidence or self.policy.inferred_confidence,
-                        "inferred")
+                        "inferred"
+                    )
                 end
                 injected = injected + 1
             end
@@ -190,8 +192,7 @@ function M:turn(problem)
     -- Rank active hypotheses for synthesize (selection-aware ordering)
     local all_active = problem:active_hypotheses()
     if self.strategies.hypothesis_selection then
-        all_active = self.strategies.hypothesis_selection.rank(
-            all_active, self.policy)
+        all_active = self.strategies.hypothesis_selection.rank(all_active, self.policy)
     else
         table.sort(all_active, function(a, b)
             return a.confidence.value > b.confidence.value
@@ -203,16 +204,13 @@ function M:turn(problem)
     solution.turn_id = turn_id
 
     -- Constraint check
-    solution.constraint_results = self.strategies.constraint_verify.verify(
-        solution, problem.constraints, problem
-    )
+    solution.constraint_results = self.strategies.constraint_verify.verify(solution, problem.constraints, problem)
 
     -- Accumulate solution
     problem.solutions[#problem.solutions + 1] = solution
 
     -- Continuation judgment
-    local continuation = self.strategies.continuation.judge(
-        solution, problem, self.policy)
+    local continuation = self.strategies.continuation.judge(solution, problem, self.policy)
 
     return {
         type = "solution",
@@ -232,10 +230,10 @@ end
 --- Internal auto-loop (for sub_problems)
 function M:_solve_sub(problem, depth)
     if depth > self.policy.max_sub_depth then
-        return S.Solution {
+        return S.Solution({
             content = "depth limit: " .. problem.statement,
-            confidence = S.Confidence { value = 0.3, volatility = 0.8, basis = "depth_limit" },
-        }
+            confidence = S.Confidence({ value = 0.3, volatility = 0.8, basis = "depth_limit" }),
+        })
     end
 
     local hypotheses = self.strategies.hypothesis_gen.generate(problem, self.policy, {})
@@ -247,10 +245,10 @@ function M:_solve_sub(problem, depth)
     end)
 
     if #hypotheses == 0 then
-        return S.Solution {
+        return S.Solution({
             content = "no hypotheses for: " .. problem.statement,
-            confidence = S.Confidence { value = 0.1, volatility = 1.0, basis = "empty" },
-        }
+            confidence = S.Confidence({ value = 0.1, volatility = 1.0, basis = "empty" }),
+        })
     end
 
     return self.strategies.synthesize.synthesize(hypotheses, problem)

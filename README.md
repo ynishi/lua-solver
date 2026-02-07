@@ -19,7 +19,7 @@ Problem
 └── Solution       ... synthesized solution + constraint results
 ```
 
-## Strategy IF (10 swappable points)
+## Strategy IF (11 swappable points)
 
 | # | Strategy | Responsibility |
 |---|----------|----------------|
@@ -27,12 +27,13 @@ Problem
 | 2 | GapResolution | Resolve missing information |
 | 3 | Decompose | Break into sub-problems |
 | 4 | HypothesisGen | Generate hypotheses (Adversarial, DeltaAware, etc.) |
-| 5 | EvidenceEval | Evaluate evidence (evaluate_batch IF) |
+| 5 | EvidenceEval | Evaluate evidence (Selective, IndependenceWeighted, etc.) |
 | 6 | ConstraintVerify | Check constraint satisfaction |
 | 7 | Synthesize | Synthesize hypotheses into solution |
 | 8 | Merge | Merge sub-solutions |
 | 9 | Continuation | Continue/stop decision |
 | 10 | ReEvaluate | Re-evaluate on information change |
+| 11 | HypothesisSelection | Budget-limited evaluation (Greedy, UCB1, Thompson) |
 
 ## Install
 
@@ -108,7 +109,7 @@ end
 lua lua_solver/test.lua
 ```
 
-104 unit tests, no LLM required.
+Over 100 unit tests, no LLM required.
 
 ## License
 
